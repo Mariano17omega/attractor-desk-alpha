@@ -1,0 +1,11 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": ["**/dist/**"]
+    },
+    "format:check": {
+      "dependsOn": ["^format:check"]
+    }
+  }
+}

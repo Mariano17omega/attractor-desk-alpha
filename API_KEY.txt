@@ -1,0 +1,16 @@
+# Open Canvas Python - API Key Configuration
+#
+# Format: KEY=VALUE (one per line)
+# Lines starting with # are comments
+#
+# Required:
+OPENROUTER_API_KEY=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
+
+# Optional - LangSmith tracing:
+# LANGSMITH_API_KEY=your-langsmith-api-key-here
+
+# Optional - Web search (Exa):
+# EXA_API_KEY=your-exa-api-key-here
+
+# Optional - Web scraping (FireCrawl):
+# FIRECRAWL_API_KEY=your-firecrawl-api-key-here

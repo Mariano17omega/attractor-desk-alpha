@@ -186,7 +186,7 @@ class OpenRouterChat(BaseChatModel):
         
         ai_message = AIMessage(
             content=message.get("content", ""),
-            tool_calls=tool_calls if tool_calls else None,
+            tool_calls=tool_calls,
         )
         
         generation = ChatGeneration(message=ai_message)

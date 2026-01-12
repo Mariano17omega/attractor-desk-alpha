@@ -96,6 +96,9 @@ class OpenCanvasState(BaseModel):
     
     # Next node to route to
     next: Optional[str] = None
+
+    # Session title updates
+    session_title: Optional[str] = None
     
     # Text artifact modification options
     language: Optional[LanguageOptions] = None

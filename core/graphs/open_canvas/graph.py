@@ -3,10 +3,15 @@ Open Canvas main graph definition.
 This is the primary graph that handles all conversation and artifact generation.
 """
 
-from typing import Literal, Union
-from langgraph.graph import StateGraph, START, END
+from datetime import datetime
+from typing import Literal, Optional
 
-from core.graphs.open_canvas.state import OpenCanvasState
+from langchain_core.messages import BaseMessage, HumanMessage
+from langgraph.config import RunnableConfig
+from langgraph.graph import StateGraph, START, END
+from pydantic import BaseModel, Field
+
+from core.constants import CHARACTER_MAX, OC_SUMMARIZED_MESSAGE_KEY
 from core.graphs.open_canvas.nodes import (
     generate_path,
     generate_artifact,
@@ -20,8 +25,23 @@ from core.graphs.open_canvas.nodes import (
     update_highlighted_text,
     custom_action,
 )
+from core.graphs.open_canvas.prompts import (
+    WEB_SEARCH_CLASSIFIER_PROMPT,
+    WEB_SEARCH_QUERY_PROMPT,
+    SUMMARIZER_PROMPT,
+    SUMMARY_MESSAGE_TEMPLATE,
+    TITLE_SYSTEM_PROMPT,
+    TITLE_USER_PROMPT,
+)
+from core.graphs.open_canvas.state import OpenCanvasState, is_summary_message
 from core.graphs.rag.graph import graph as rag_graph
-from core.constants import CHARACTER_MAX
+from core.llm import get_chat_model
+from core.persistence import Database, SessionRepository
+from core.providers.exa_search import ExaSearchProvider
+from core.providers.search import SearchResult as ProviderSearchResult
+from core.types import ExaMetadata, SearchResult as WebSearchResult
+from core.utils.artifacts import get_artifact_content, is_artifact_code_content, is_artifact_markdown_content
+from core.utils.messages import create_ai_message_from_web_results, format_messages, get_string_from_content
 
 
 def route_node(state: OpenCanvasState) -> str:
@@ -65,23 +85,257 @@ def conditionally_generate_title(
     return "generateTitle"
 
 
-# Placeholder nodes for graphs not yet fully implemented
-async def summarizer_node(state: OpenCanvasState):
-    """Placeholder for summarizer graph."""
-    # TODO: Implement full summarizer logic
-    return {}
+def _last_user_message(messages: list[BaseMessage]) -> Optional[BaseMessage]:
+    for message in reversed(messages):
+        if getattr(message, "type", "") != "human":
+            continue
+        if is_summary_message(message):
+            continue
+        return message
+    return None
 
 
-async def generate_title_node(state: OpenCanvasState):
-    """Placeholder for title generation."""
-    # TODO: Implement title generation
-    return {}
+def _to_web_search_results(
+    results: list[ProviderSearchResult],
+) -> list[WebSearchResult]:
+    converted: list[WebSearchResult] = []
+    for result in results:
+        metadata = ExaMetadata(
+            id=result.url or "",
+            url=result.url,
+            title=result.title or "",
+            author=result.author or "",
+            published_date=result.published_date or "",
+            image=result.image,
+            favicon=result.favicon,
+        )
+        converted.append(
+            WebSearchResult(
+                page_content=result.content or "",
+                metadata=metadata,
+            )
+        )
+    return converted
 
 
-async def web_search_node(state: OpenCanvasState):
-    """Placeholder for web search subgraph."""
-    # TODO: Implement web search
-    return {"web_search_results": []}
+async def summarizer_node(
+    state: OpenCanvasState,
+    config: RunnableConfig,
+):
+    """Summarize internal messages when over the character budget."""
+    messages = state.internal_messages if state.internal_messages else state.messages
+    if not messages:
+        return {}
+
+    configurable = config.get("configurable", {})
+    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
+    api_key = configurable.get("api_key")
+    model = get_chat_model(
+        model=model_name,
+        temperature=0,
+        streaming=False,
+        api_key=api_key,
+    )
+
+    formatted_messages = format_messages(messages)
+    response = await model.ainvoke([
+        {"role": "system", "content": SUMMARIZER_PROMPT},
+        {"role": "user", "content": f"Here are the messages to summarize:\n{formatted_messages}"},
+    ])
+
+    summary_content = response.content
+    if isinstance(summary_content, list):
+        summary_content = get_string_from_content(summary_content)
+    elif not isinstance(summary_content, str):
+        summary_content = str(summary_content)
+    summary_message = HumanMessage(
+        content=SUMMARY_MESSAGE_TEMPLATE.format(summary=summary_content),
+        additional_kwargs={OC_SUMMARIZED_MESSAGE_KEY: True},
+    )
+
+    print(f"[DEBUG] Summary generated ({len(summary_content)} chars).")
+
+    return {"internal_messages": [summary_message]}
+
+
+async def generate_title_node(
+    state: OpenCanvasState,
+    config: RunnableConfig,
+):
+    """Generate and persist a concise session title after the first exchange."""
+    if len(state.messages) > 2:
+        return {}
+
+    configurable = config.get("configurable", {})
+    session_id = configurable.get("session_id")
+    if not session_id:
+        return {}
+
+    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
+    api_key = configurable.get("api_key")
+    model = get_chat_model(
+        model=model_name,
+        temperature=0,
+        streaming=False,
+        api_key=api_key,
+    )
+
+    class TitleOutput(BaseModel):
+        """Generated session title."""
+        title: str = Field(description="The generated title for the conversation.")
+
+    model_with_tool = model.bind_tools(
+        [
+            {
+                "name": "generate_title",
+                "description": "Generate a concise title for the conversation.",
+                "schema": TitleOutput,
+            }
+        ],
+        tool_choice="generate_title",
+    )
+
+    conversation = format_messages(state.messages)
+    artifact_context = "No artifact was generated during this conversation."
+    if state.artifact and state.artifact.contents:
+        current_content = get_artifact_content(state.artifact)
+        if is_artifact_markdown_content(current_content):
+            artifact_text = current_content.full_markdown
+        elif is_artifact_code_content(current_content):
+            artifact_text = current_content.code
+        else:
+            artifact_text = ""
+        if artifact_text:
+            artifact_context = (
+                "An artifact was generated during this conversation:\n\n"
+                f"{artifact_text}"
+            )
+
+    formatted_user_prompt = TITLE_USER_PROMPT.format(
+        conversation=conversation,
+        artifact_context=artifact_context,
+    )
+
+    response = await model_with_tool.ainvoke([
+        {"role": "system", "content": TITLE_SYSTEM_PROMPT},
+        {"role": "user", "content": formatted_user_prompt},
+    ])
+
+    title = None
+    if response.tool_calls:
+        args = response.tool_calls[0].get("args") or {}
+        title = args.get("title")
+
+    if not title:
+        print("[DEBUG] Title generation skipped: no tool call returned.")
+        return {}
+
+    repo = SessionRepository(Database())
+    session = repo.get_by_id(session_id)
+    if not session:
+        return {}
+
+    title = title.strip()
+    if not title:
+        return {}
+
+    if session.title != title:
+        session.title = title
+        session.updated_at = datetime.now()
+        repo.update(session)
+        print(f"[DEBUG] Session title updated: {title}")
+
+    return {"session_title": title}
+
+
+async def web_search_node(
+    state: OpenCanvasState,
+    config: RunnableConfig,
+):
+    """Web search flow: classify, generate query, search, and store results."""
+    if not state.web_search_enabled:
+        return {"web_search_results": []}
+
+    messages = state.internal_messages if state.internal_messages else state.messages
+    last_user_message = _last_user_message(messages)
+    if not last_user_message:
+        print("[DEBUG] Web search skipped: no user message.")
+        return {"web_search_results": []}
+
+    user_message = get_string_from_content(last_user_message.content).strip()
+    if not user_message:
+        print("[DEBUG] Web search skipped: empty user message.")
+        return {"web_search_results": []}
+
+    configurable = config.get("configurable", {})
+    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
+    api_key = configurable.get("api_key")
+    model = get_chat_model(
+        model=model_name,
+        temperature=0,
+        streaming=False,
+        api_key=api_key,
+    )
+
+    class WebSearchDecision(BaseModel):
+        """Classification for web search."""
+        should_search: bool = Field(
+            description="Whether or not to search the web based on the user's latest message."
+        )
+
+    classifier = model.with_structured_output(WebSearchDecision, name="classify_message")
+    classifier_prompt = WEB_SEARCH_CLASSIFIER_PROMPT.format(message=user_message)
+
+    should_search = False
+    try:
+        result = await classifier.ainvoke([{"role": "user", "content": classifier_prompt}])
+        if getattr(result, "tool_calls", None):
+            args = result.tool_calls[0].get("args") or {}
+            should_search = bool(
+                args.get("should_search", args.get("shouldSearch", False))
+            )
+        elif hasattr(result, "should_search"):
+            should_search = bool(result.should_search)
+    except Exception as exc:
+        print(f"[DEBUG] Web search classification failed: {exc}")
+
+    if not should_search:
+        print("[DEBUG] Web search not required for this message.")
+        return {"web_search_results": []}
+
+    additional_context = f"The current date is {datetime.now().strftime('%B %d, %Y %H:%M')}"
+    formatted_messages = format_messages(messages)
+    query_prompt = WEB_SEARCH_QUERY_PROMPT.format(
+        conversation=formatted_messages,
+        additional_context=additional_context,
+    )
+    query_response = await model.ainvoke([{"role": "user", "content": query_prompt}])
+    query_content = query_response.content
+    if isinstance(query_content, list):
+        query_content = get_string_from_content(query_content)
+    elif not isinstance(query_content, str):
+        query_content = str(query_content)
+    query = query_content.strip()
+    if not query:
+        print("[DEBUG] Web search skipped: query generation failed.")
+        return {"web_search_results": []}
+
+    provider_name = configurable.get("web_search_provider", "exa") or "exa"
+    num_results = int(configurable.get("web_search_num_results", 5))
+    results: list[ProviderSearchResult] = []
+
+    if provider_name == "exa":
+        provider = ExaSearchProvider(api_key=configurable.get("exa_api_key"))
+        try:
+            results = provider.search_sync(query, num_results=num_results)
+        except Exception as exc:
+            print(f"[DEBUG] Exa search failed: {exc}")
+    else:
+        print(f"[DEBUG] Web search provider not supported: {provider_name}")
+
+    converted_results = _to_web_search_results(results)
+    print(f"[DEBUG] Web search results: {len(converted_results)}")
+    return {"web_search_results": converted_results}
 
 
 async def route_post_web_search(state: OpenCanvasState):
@@ -89,12 +343,18 @@ async def route_post_web_search(state: OpenCanvasState):
     has_artifact = state.artifact and len(state.artifact.contents) > 0
     
     if not state.web_search_results:
-        return {"next": "rewriteArtifact" if has_artifact else "generateArtifact"}
+        return {
+            "next": "rewriteArtifact" if has_artifact else "generateArtifact",
+            "web_search_enabled": False,
+        }
     
     # Web search returned results
     return {
         "next": "rewriteArtifact" if has_artifact else "generateArtifact",
         "web_search_enabled": False,
+        "internal_messages": [
+            create_ai_message_from_web_results(state.web_search_results)
+        ],
     }
 
 

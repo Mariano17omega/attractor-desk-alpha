@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from core.graphs.open_canvas import graph
 from core.models import Message, MessageAttachment, MessageRole, Session
+from core.config import get_exa_api_key, get_firecrawl_api_key
 from core.constants import DEFAULT_EMBEDDING_MODEL
 from core.persistence import (
     ArtifactRepository,
@@ -92,6 +93,7 @@ class ChatViewModel(QObject):
         self._rag_service = rag_service
 
         self._messages: list[BaseMessage] = []
+        self._internal_messages: list[BaseMessage] = []
         self._artifact: Optional[ArtifactV3] = None
         self._is_loading: bool = False
         self._assistant_id: str = str(uuid4())
@@ -177,6 +179,7 @@ class ChatViewModel(QObject):
                 self._messages.append(HumanMessage(content=message.content))
             elif message.role == MessageRole.ASSISTANT:
                 self._messages.append(AIMessage(content=message.content))
+        self._internal_messages = self._messages.copy()
         self._artifact = self._artifact_repository.get_for_session(session_id)
         self.messages_loaded.emit(
             [
@@ -188,6 +191,7 @@ class ChatViewModel(QObject):
 
     def clear(self) -> None:
         self._messages = []
+        self._internal_messages = []
         self._artifact = None
         self._current_session = None
         self._clear_pending_attachments()
@@ -233,6 +237,7 @@ class ChatViewModel(QObject):
         # Add user message
         user_message = HumanMessage(content=content_payload)
         self._messages.append(user_message)
+        self._internal_messages.append(user_message)
         self.message_added.emit(content, True)
 
         now = datetime.now()
@@ -255,14 +260,25 @@ class ChatViewModel(QObject):
         self.status_changed.emit("Processing...")
         
         # Prepare state
+        internal_messages = (
+            self._internal_messages.copy()
+            if self._internal_messages
+            else self._messages.copy()
+        )
         state = {
             "messages": self._messages.copy(),
-            "internal_messages": self._messages.copy(),
+            "internal_messages": internal_messages,
+            "web_search_enabled": self._settings_viewmodel.deep_search_enabled,
         }
         
         if self._artifact:
             state["artifact"] = self._artifact
         
+        exa_api_key = self._settings_viewmodel.exa_api_key or get_exa_api_key()
+        firecrawl_api_key = (
+            self._settings_viewmodel.firecrawl_api_key or get_firecrawl_api_key()
+        )
+
         config = {
             "configurable": {
                 "assistant_id": self._assistant_id,
@@ -282,6 +298,10 @@ class ChatViewModel(QObject):
                 "rag_embedding_model": self._settings_viewmodel.rag_embedding_model,
                 "rag_enable_query_rewrite": self._settings_viewmodel.rag_enable_query_rewrite,
                 "rag_enable_llm_rerank": self._settings_viewmodel.rag_enable_llm_rerank,
+                "web_search_provider": self._settings_viewmodel.search_provider,
+                "web_search_num_results": self._settings_viewmodel.deep_search_num_results,
+                "exa_api_key": exa_api_key or None,
+                "firecrawl_api_key": firecrawl_api_key or None,
             }
         }
         
@@ -303,6 +323,11 @@ class ChatViewModel(QObject):
         
         # Debug: Print result keys
         print(f"[DEBUG] Graph result keys: {list(result.keys())}")
+
+        internal_messages_from_result = False
+        if "internal_messages" in result and result["internal_messages"] is not None:
+            self._internal_messages = list(result["internal_messages"])
+            internal_messages_from_result = True
         
         # Update artifact first
         if "artifact" in result and result["artifact"]:
@@ -341,8 +366,19 @@ class ChatViewModel(QObject):
                                 self._message_repository.add(assistant_record)
                             self._messages.append(msg)
                             self.message_added.emit(content, False)
+                            if not internal_messages_from_result:
+                                self._internal_messages.append(msg)
                 except Exception as e:
                     print(f"[DEBUG] Error processing message: {e}")
+
+        title = result.get("session_title")
+        if title and self._current_session:
+            title = title.strip()
+            if title and self._current_session.title != title:
+                self._current_session.title = title
+                self._current_session.updated_at = datetime.now()
+                self._session_repository.update(self._current_session)
+                self.session_updated.emit()
     
     def _on_graph_error(self, error: str):
         """Handle graph execution error."""

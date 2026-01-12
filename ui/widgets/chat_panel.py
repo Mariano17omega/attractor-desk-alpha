@@ -339,6 +339,14 @@ class ChatPanel(QFrame):
         bottom_layout.setContentsMargins(24, 12, 24, 16)
         bottom_layout.setSpacing(8)
 
+        self._attachments_bar = QWidget()
+        self._attachments_bar.setObjectName("attachmentBar")
+        self._attachments_layout = QHBoxLayout(self._attachments_bar)
+        self._attachments_layout.setContentsMargins(0, 0, 0, 0)
+        self._attachments_layout.setSpacing(8)
+        self._attachments_bar.setVisible(False)
+        bottom_layout.addWidget(self._attachments_bar)
+
         input_wrapper = QFrame()
         input_wrapper.setObjectName("inputArea")
         input_row_layout = QHBoxLayout(input_wrapper)
@@ -428,6 +436,9 @@ class ChatPanel(QFrame):
         self.viewmodel.message_added.connect(self._on_message_added)
         self.viewmodel.messages_loaded.connect(self._on_messages_loaded)
         self.viewmodel.is_loading_changed.connect(self._on_loading_changed)
+        self.viewmodel.pending_attachments_changed.connect(
+            self._on_pending_attachments_changed
+        )
 
     def _send_message(self) -> None:
         content = self._message_input.toPlainText().strip()
@@ -435,6 +446,9 @@ class ChatPanel(QFrame):
             return
         self._message_input.clear()
         self.viewmodel.send_message(content)
+
+    def send_current_message(self) -> None:
+        self._send_message()
 
     def _on_message_added(self, content: str, is_user: bool) -> None:
         bubble = MessageBubble(content, is_user)
@@ -460,6 +474,9 @@ class ChatPanel(QFrame):
         self._cancel_btn.setVisible(is_loading)
         self._message_input.setEnabled(not is_loading)
 
+    def _on_pending_attachments_changed(self, attachments: list[str]) -> None:
+        self._update_attachment_previews(attachments)
+
     def _scroll_to_bottom(self) -> None:
         self._scroll_area.verticalScrollBar().setValue(
             self._scroll_area.verticalScrollBar().maximum()
@@ -476,6 +493,9 @@ class ChatPanel(QFrame):
 
     def focus_input(self) -> None:
         self._message_input.setFocus()
+
+    def set_send_shortcut(self, sequence: str) -> None:
+        self._message_input.set_send_sequence(sequence)
 
     def _on_add_clicked(self) -> None:
         """Open PDF file dialog and import selected file."""
@@ -538,3 +558,39 @@ class ChatPanel(QFrame):
         """Handle Deep Search button toggle."""
         self._update_deep_search_style(checked)
         self.deep_search_toggle_requested.emit()
+
+    def _update_attachment_previews(self, attachments: list[str]) -> None:
+        while self._attachments_layout.count():
+            item = self._attachments_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+
+        if not attachments:
+            self._attachments_bar.setVisible(False)
+            return
+
+        for path in attachments:
+            preview = QLabel()
+            preview.setFixedSize(64, 64)
+            preview.setStyleSheet(
+                "border: 1px solid rgba(148, 163, 184, 0.4);"
+                "border-radius: 6px;"
+                "background-color: rgba(15, 23, 42, 0.6);"
+            )
+            pixmap = QPixmap(path)
+            if not pixmap.isNull():
+                preview.setPixmap(
+                    pixmap.scaled(
+                        58,
+                        58,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+            else:
+                preview.setText("Image")
+                preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._attachments_layout.addWidget(preview)
+
+        self._attachments_layout.addStretch()
+        self._attachments_bar.setVisible(True)

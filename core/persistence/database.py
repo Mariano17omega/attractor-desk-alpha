@@ -44,6 +44,17 @@ class Database:
     CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 
+    -- Message attachments
+    CREATE TABLE IF NOT EXISTS message_attachments (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_attachments_message_id
+        ON message_attachments(message_id);
+
     -- Artifacts
     CREATE TABLE IF NOT EXISTS artifacts (
         id TEXT PRIMARY KEY,

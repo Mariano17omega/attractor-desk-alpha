@@ -4,6 +4,7 @@ from .database import Database
 from .workspace_repository import WorkspaceRepository
 from .session_repository import SessionRepository
 from .message_repository import MessageRepository
+from .message_attachment_repository import MessageAttachmentRepository
 from .artifact_repository import ArtifactRepository
 from .settings_repository import SettingsRepository
 from .rag_repository import RagRepository
@@ -13,6 +14,7 @@ __all__ = [
     "WorkspaceRepository",
     "SessionRepository",
     "MessageRepository",
+    "MessageAttachmentRepository",
     "ArtifactRepository",
     "SettingsRepository",
     "RagRepository",

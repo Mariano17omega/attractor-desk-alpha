@@ -41,7 +41,7 @@ The system SHALL allow users to create, select, and delete chat sessions from th
 - **THEN** the session is removed from the list and its data is no longer accessible.
 
 ### Requirement: Persisted Sessions and Artifacts
-The system SHALL persist workspaces, sessions, messages, and artifacts locally and restore them on startup. The system SHALL associate chat messages and artifacts with the active session so selecting a session restores its history and latest artifact state.
+The system SHALL persist workspaces, sessions, messages, and artifacts locally and restore them on startup. The system SHALL associate chat messages and artifacts with the active session so selecting a session restores its history and the full artifact collection, including the active artifact and its version history.
 
 #### Scenario: Restart persistence
 - **WHEN** the application restarts
@@ -49,5 +49,6 @@ The system SHALL persist workspaces, sessions, messages, and artifacts locally a
 
 #### Scenario: Session artifact restoration
 - **WHEN** a user selects a session with saved artifacts
-- **THEN** the artifacts panel displays the latest artifact state for that session.
+- **THEN** the artifacts panel displays the artifact tabs for that session
+- **AND** the active artifact is shown with its latest content.
 

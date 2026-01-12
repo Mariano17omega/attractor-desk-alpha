@@ -110,3 +110,41 @@ class Message:
             content=content,
             timestamp=datetime.now(),
         )
+
+
+@dataclass(frozen=True)
+class ShortcutDefinition:
+    """Definition for a keyboard shortcut action."""
+
+    action_id: str
+    label: str
+    description: str
+    default_sequence: str
+
+
+@dataclass
+class ShortcutBinding:
+    """Binding for a keyboard shortcut action."""
+
+    action_id: str
+    sequence: str
+
+
+@dataclass
+class MessageAttachment:
+    """Attachment metadata for a message."""
+
+    id: str
+    message_id: str
+    file_path: str
+    created_at: datetime = field(default_factory=datetime.now)
+
+    @classmethod
+    def create(cls, message_id: str, file_path: str) -> "MessageAttachment":
+        """Create a new message attachment with an auto-generated ID."""
+        return cls(
+            id=str(uuid.uuid4()),
+            message_id=message_id,
+            file_path=file_path,
+            created_at=datetime.now(),
+        )

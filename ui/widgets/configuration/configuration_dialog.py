@@ -25,6 +25,7 @@ from ui.widgets.configuration.deep_search_page import DeepSearchPage
 from ui.widgets.configuration.models_page import ModelsPage
 from ui.widgets.configuration.placeholder_page import PlaceholderPage
 from ui.widgets.configuration.rag_page import RagPage
+from ui.widgets.configuration.shortcuts_page import ShortcutsPage
 from ui.widgets.configuration.theme_page import ThemePage
 from ui.styles import COLORS, get_dark_theme_stylesheet, get_light_theme_stylesheet
 
@@ -111,16 +112,7 @@ class ConfigurationDialog(QDialog):
                 "Retention behavior",
             ],
         )
-        self._shortcuts_page = PlaceholderPage(
-            "Shortcuts Settings",
-            "Shortcuts configuration coming soon.",
-            [
-                "Send message",
-                "New session",
-                "Open settings",
-                "Toggle panels",
-            ],
-        )
+        self._shortcuts_page = ShortcutsPage(self._viewmodel)
         self._theme_page = ThemePage(self._viewmodel)
 
         self._stack.addWidget(self._wrap_in_scroll_area(self._models_page))

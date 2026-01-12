@@ -33,9 +33,27 @@ The Models page SHALL allow editing the API key and selecting a default model, a
 - **THEN** the UI updates to reflect the new theme settings.
 
 ### Requirement: Placeholder Pages
-The Deep Research, RAG, Memory, and Shortcuts pages SHALL be accessible from the sidebar and SHALL display placeholder layouts consistent with the reference without altering application behavior.
+The Deep Research, Memory, and Shortcuts pages SHALL be accessible from the sidebar and SHALL display placeholder layouts consistent with the reference without altering application behavior.
 
 #### Scenario: Placeholder navigation
 - **WHEN** the user navigates to a placeholder page
 - **THEN** the page renders placeholder content and does not modify settings or runtime behavior.
+
+### Requirement: Shortcuts Configuration Page
+The system SHALL provide a Shortcuts configuration page that lists available shortcut actions with their key sequences and descriptions, allows editing key sequences, and offers a reset to defaults option. Changes SHALL update the in-memory settings immediately and SHALL persist only when the user saves the configuration dialog.
+
+#### Scenario: Edit shortcut binding
+- **WHEN** the user edits a shortcut key sequence on the Shortcuts page
+- **THEN** the new key sequence is shown in the list and becomes the pending setting value.
+
+#### Scenario: Reset shortcuts
+- **WHEN** the user resets shortcuts to defaults
+- **THEN** the list shows the default key sequences for all actions.
+
+### Requirement: RAG Settings Page
+The configuration dialog SHALL provide a RAG settings page with controls for `rag.enabled`, `rag.scope`, `rag.chunk_size_chars`, `rag.chunk_overlap_chars`, `rag.k_lex`, `rag.k_vec`, `rag.rrf_k`, `rag.max_candidates`, `rag.embedding_model`, `rag.enable_query_rewrite`, `rag.enable_llm_rerank`, and `rag.index_text_artifacts`. Changes on this page SHALL persist and apply to subsequent indexing and retrieval behavior.
+
+#### Scenario: Update RAG settings
+- **WHEN** the user updates RAG settings and saves
+- **THEN** the values persist and are used by the RAG pipeline.
 

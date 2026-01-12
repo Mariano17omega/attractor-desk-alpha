@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
@@ -10,9 +11,14 @@ from PySide6.QtCore import QObject, Signal, Slot, QThread
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from core.graphs.open_canvas import graph
-from core.models import Message, MessageRole, Session
+from core.models import Message, MessageAttachment, MessageRole, Session
 from core.constants import DEFAULT_EMBEDDING_MODEL
-from core.persistence import ArtifactRepository, MessageRepository, SessionRepository
+from core.persistence import (
+    ArtifactRepository,
+    MessageAttachmentRepository,
+    MessageRepository,
+    SessionRepository,
+)
 from core.services.docling_service import DoclingService, PdfConversionResult
 from core.services.rag_service import RagIndexRequest, RagService
 from core.types import (
@@ -24,6 +30,7 @@ from core.types import (
     ArtifactV3,
 )
 from ui.viewmodels.settings_viewmodel import SettingsViewModel
+from ui.services.image_utils import file_path_to_data_url
 
 
 class GraphWorker(QThread):
@@ -64,10 +71,12 @@ class ChatViewModel(QObject):
     error_occurred = Signal(str)
     session_updated = Signal()
     pdf_import_status = Signal(str)  # Emits status updates for PDF import
+    pending_attachments_changed = Signal(object)
 
     def __init__(
         self,
         message_repository: MessageRepository,
+        attachment_repository: MessageAttachmentRepository,
         artifact_repository: ArtifactRepository,
         session_repository: SessionRepository,
         settings_viewmodel: SettingsViewModel,
@@ -76,6 +85,7 @@ class ChatViewModel(QObject):
     ):
         super().__init__(parent)
         self._message_repository = message_repository
+        self._attachment_repository = attachment_repository
         self._artifact_repository = artifact_repository
         self._session_repository = session_repository
         self._settings_viewmodel = settings_viewmodel
@@ -86,6 +96,7 @@ class ChatViewModel(QObject):
         self._is_loading: bool = False
         self._assistant_id: str = str(uuid4())
         self._current_session: Optional[Session] = None
+        self._pending_attachments: list[str] = []
 
         self._worker: Optional[GraphWorker] = None
         self._cancelled = False
@@ -121,6 +132,32 @@ class ChatViewModel(QObject):
     @property
     def current_session_id(self) -> Optional[str]:
         return self._current_session.id if self._current_session else None
+
+    @property
+    def pending_attachments(self) -> list[str]:
+        return self._pending_attachments.copy()
+
+    def add_pending_attachment(self, file_path: str) -> None:
+        if not self._current_session:
+            self.error_occurred.emit("No active session for attachments")
+            return
+        if not file_path:
+            return
+        path = Path(file_path)
+        if not path.exists():
+            self.error_occurred.emit("Attachment file not found")
+            return
+        normalized = str(path)
+        if normalized in self._pending_attachments:
+            return
+        self._pending_attachments.append(normalized)
+        self.pending_attachments_changed.emit(self._pending_attachments.copy())
+
+    def _clear_pending_attachments(self) -> None:
+        if not self._pending_attachments:
+            return
+        self._pending_attachments = []
+        self.pending_attachments_changed.emit([])
     
     def _set_loading(self, loading: bool):
         """Set loading state."""
@@ -131,6 +168,7 @@ class ChatViewModel(QObject):
         session = self._session_repository.get_by_id(session_id)
         if session is None:
             return
+        self._clear_pending_attachments()
         self._current_session = session
         stored_messages = self._message_repository.get_by_session(session_id)
         self._messages = []
@@ -152,6 +190,7 @@ class ChatViewModel(QObject):
         self._messages = []
         self._artifact = None
         self._current_session = None
+        self._clear_pending_attachments()
         self.messages_loaded.emit([])
         self.artifact_changed.emit()
     
@@ -174,9 +213,25 @@ class ChatViewModel(QObject):
             content=content,
         )
         self._message_repository.add(user_record)
-        
+
+        attachments = self._pending_attachments.copy()
+        content_payload: str | list[dict] = content
+        attached_paths: list[str] = []
+        if attachments:
+            parts = [{"type": "text", "text": content}]
+            for path in attachments:
+                try:
+                    data_url = file_path_to_data_url(path)
+                except Exception as exc:
+                    self.error_occurred.emit(f"Failed to attach image: {exc}")
+                    continue
+                parts.append({"type": "image_url", "image_url": {"url": data_url}})
+                attached_paths.append(path)
+            if attached_paths:
+                content_payload = parts
+
         # Add user message
-        user_message = HumanMessage(content=content)
+        user_message = HumanMessage(content=content_payload)
         self._messages.append(user_message)
         self.message_added.emit(content, True)
 
@@ -189,6 +244,12 @@ class ChatViewModel(QObject):
         self._session_repository.update(self._current_session)
         self.session_updated.emit()
         
+        if attached_paths:
+            for path in attached_paths:
+                attachment = MessageAttachment.create(user_record.id, path)
+                self._attachment_repository.add(attachment)
+        self._clear_pending_attachments()
+
         # Start loading
         self._set_loading(True)
         self.status_changed.emit("Processing...")

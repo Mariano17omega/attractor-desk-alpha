@@ -8,7 +8,7 @@ from typing import Optional
 from PySide6.QtCore import QObject, Signal
 
 from core.constants import DEFAULT_EMBEDDING_MODEL, DEFAULT_MODEL
-from core.models import ThemeMode
+from core.models import ShortcutDefinition, ThemeMode
 from core.persistence import Database, SettingsRepository
 
 
@@ -27,6 +27,56 @@ DEFAULT_MODELS = [
     "deepseek/deepseek-chat",
 ]
 
+DEFAULT_SHORTCUT_DEFINITIONS = [
+    ShortcutDefinition(
+        action_id="send_message",
+        label="Send Message",
+        description="Send the current message",
+        default_sequence="Ctrl+Return",
+    ),
+    ShortcutDefinition(
+        action_id="new_session",
+        label="New Session",
+        description="Start a new chat session",
+        default_sequence="Ctrl+N",
+    ),
+    ShortcutDefinition(
+        action_id="new_workspace",
+        label="New Workspace",
+        description="Create a new workspace",
+        default_sequence="Ctrl+Shift+N",
+    ),
+    ShortcutDefinition(
+        action_id="cancel_generation",
+        label="Cancel Generation",
+        description="Stop the current response",
+        default_sequence="Esc",
+    ),
+    ShortcutDefinition(
+        action_id="open_settings",
+        label="Open Settings",
+        description="Open the settings dialog",
+        default_sequence="Ctrl+,",
+    ),
+    ShortcutDefinition(
+        action_id="capture_full_screen",
+        label="Capture Full Screen",
+        description="Capture the active monitor",
+        default_sequence="Ctrl+Shift+F",
+    ),
+    ShortcutDefinition(
+        action_id="capture_region",
+        label="Capture Region",
+        description="Capture a selected screen region",
+        default_sequence="Ctrl+Shift+R",
+    ),
+]
+
+DEFAULT_SHORTCUT_BINDINGS = {
+    definition.action_id: definition.default_sequence
+    for definition in DEFAULT_SHORTCUT_DEFINITIONS
+}
+
 
 class SettingsViewModel(QObject):
     """ViewModel for managing application settings."""
@@ -38,6 +88,7 @@ class SettingsViewModel(QObject):
     transparency_changed = Signal(int)
     keep_above_changed = Signal(bool)
     deep_search_toggled = Signal(bool)
+    shortcuts_changed = Signal()
 
     KEY_THEME_MODE = "theme.mode"
     KEY_FONT_FAMILY = "theme.font_family"
@@ -63,6 +114,7 @@ class SettingsViewModel(QObject):
     KEY_RAG_ENABLE_QUERY_REWRITE = "rag.enable_query_rewrite"
     KEY_RAG_ENABLE_LLM_RERANK = "rag.enable_llm_rerank"
     KEY_RAG_INDEX_TEXT = "rag.index_text_artifacts"
+    KEY_SHORTCUT_BINDINGS = "shortcuts.bindings"
 
     def __init__(
         self,
@@ -97,6 +149,7 @@ class SettingsViewModel(QObject):
         self._rag_enable_query_rewrite: bool = False
         self._rag_enable_llm_rerank: bool = False
         self._rag_index_text_artifacts: bool = False
+        self._shortcut_bindings: dict[str, str] = DEFAULT_SHORTCUT_BINDINGS.copy()
 
         self._saved_state: dict[str, object] = {}
         self.load_settings()
@@ -373,6 +426,43 @@ class SettingsViewModel(QObject):
             self._rag_index_text_artifacts = value
             self.settings_changed.emit()
 
+    @property
+    def shortcut_definitions(self) -> list[ShortcutDefinition]:
+        return DEFAULT_SHORTCUT_DEFINITIONS.copy()
+
+    @property
+    def shortcut_bindings(self) -> dict[str, str]:
+        return self._shortcut_bindings.copy()
+
+    def get_shortcut_sequence(self, action_id: str) -> str:
+        return self._shortcut_bindings.get(action_id, "")
+
+    def set_shortcut_sequence(self, action_id: str, sequence: str) -> None:
+        if action_id not in DEFAULT_SHORTCUT_BINDINGS:
+            return
+        cleaned = (sequence or "").strip()
+        if self._shortcut_bindings.get(action_id, "") != cleaned:
+            self._shortcut_bindings[action_id] = cleaned
+            self.shortcuts_changed.emit()
+            self.settings_changed.emit()
+
+    def reset_shortcuts(self) -> None:
+        self._shortcut_bindings = DEFAULT_SHORTCUT_BINDINGS.copy()
+        self.shortcuts_changed.emit()
+        self.settings_changed.emit()
+
+    def _normalize_shortcut_bindings(
+        self, bindings: dict[str, object]
+    ) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for definition in DEFAULT_SHORTCUT_DEFINITIONS:
+            value = bindings.get(definition.action_id)
+            if isinstance(value, str):
+                normalized[definition.action_id] = value.strip()
+            else:
+                normalized[definition.action_id] = definition.default_sequence
+        return normalized
+
     def snapshot(self) -> dict[str, object]:
         return {
             "theme_mode": self._theme_mode,
@@ -399,6 +489,7 @@ class SettingsViewModel(QObject):
             "rag_enable_query_rewrite": self._rag_enable_query_rewrite,
             "rag_enable_llm_rerank": self._rag_enable_llm_rerank,
             "rag_index_text_artifacts": self._rag_index_text_artifacts,
+            "shortcut_bindings": self._shortcut_bindings.copy(),
         }
 
     def restore_snapshot(self, snapshot: dict[str, object]) -> None:
@@ -434,11 +525,17 @@ class SettingsViewModel(QObject):
         self._rag_index_text_artifacts = bool(
             snapshot.get("rag_index_text_artifacts", False)
         )
+        shortcuts = snapshot.get("shortcut_bindings", DEFAULT_SHORTCUT_BINDINGS.copy())
+        if isinstance(shortcuts, dict):
+            self._shortcut_bindings = self._normalize_shortcut_bindings(shortcuts)
+        else:
+            self._shortcut_bindings = DEFAULT_SHORTCUT_BINDINGS.copy()
 
         self.theme_changed.emit(self._theme_mode)
         self.transparency_changed.emit(self._transparency)
         self.keep_above_changed.emit(self._keep_above)
         self.deep_search_toggled.emit(self._deep_search_enabled)
+        self.shortcuts_changed.emit()
         self.settings_changed.emit()
 
     def load_settings(self) -> None:
@@ -503,6 +600,21 @@ class SettingsViewModel(QObject):
             self.KEY_RAG_INDEX_TEXT,
             False,
         )
+
+        shortcut_data = self._settings_repo.get_value(self.KEY_SHORTCUT_BINDINGS, "")
+        if shortcut_data:
+            try:
+                parsed_shortcuts = json.loads(shortcut_data)
+                if isinstance(parsed_shortcuts, dict):
+                    self._shortcut_bindings = self._normalize_shortcut_bindings(
+                        parsed_shortcuts
+                    )
+                else:
+                    self._shortcut_bindings = DEFAULT_SHORTCUT_BINDINGS.copy()
+            except json.JSONDecodeError:
+                self._shortcut_bindings = DEFAULT_SHORTCUT_BINDINGS.copy()
+        else:
+            self._shortcut_bindings = DEFAULT_SHORTCUT_BINDINGS.copy()
 
         self._saved_state = self.snapshot()
 
@@ -629,6 +741,11 @@ class SettingsViewModel(QObject):
                 self.KEY_RAG_INDEX_TEXT,
                 str(self._rag_index_text_artifacts).lower(),
                 "rag",
+            )
+            self._settings_repo.set(
+                self.KEY_SHORTCUT_BINDINGS,
+                json.dumps(self._shortcut_bindings),
+                "shortcuts",
             )
         except Exception as exc:
             self.error_occurred.emit(str(exc))

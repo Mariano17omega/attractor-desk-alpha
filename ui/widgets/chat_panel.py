@@ -339,11 +339,11 @@ class ChatPanel(QFrame):
         bottom_layout.setContentsMargins(24, 12, 24, 16)
         bottom_layout.setSpacing(8)
 
-        input_row = QWidget()
-        input_row.setObjectName("chatInputRow")
-        input_row_layout = QHBoxLayout(input_row)
-        input_row_layout.setContentsMargins(0, 0, 0, 0)
-        input_row_layout.setSpacing(12)
+        input_wrapper = QFrame()
+        input_wrapper.setObjectName("inputArea")
+        input_row_layout = QHBoxLayout(input_wrapper)
+        input_row_layout.setContentsMargins(8, 8, 8, 8)
+        input_row_layout.setSpacing(10)
 
         # Deep Search toggle button - toggles internet access for the agent
         self._deep_search_btn = QPushButton("🌐")
@@ -361,12 +361,16 @@ class ChatPanel(QFrame):
         self._add_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         input_row_layout.addWidget(self._add_btn)
 
-
         self._message_input = MessageInput()
         self._message_input.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
-        input_row_layout.addWidget(self._message_input, 1)
+        self._message_input.setStyleSheet(
+            "background: transparent; border: none; padding: 0px;"
+        )
+        input_row_layout.addWidget(
+            self._message_input, 1, Qt.AlignmentFlag.AlignVCenter
+        )
 
         self._send_btn = QPushButton("➤")
         self._send_btn.setFixedSize(32, 32)
@@ -376,7 +380,8 @@ class ChatPanel(QFrame):
                 background-color: #00C2FF;
                 color: white;
                 border-radius: 6px;
-                font-weight: bold;
+                font-size: 16px;
+                padding: 0px;
             }
             QPushButton:hover {
                 background-color: #3CBFF2;
@@ -395,7 +400,8 @@ class ChatPanel(QFrame):
                 background-color: #EF4444;
                 color: white;
                 border-radius: 6px;
-                font-weight: bold;
+                font-size: 16px;
+                padding: 0px;
             }
             QPushButton:hover {
                 background-color: #F87171;
@@ -405,7 +411,7 @@ class ChatPanel(QFrame):
         self._cancel_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         input_row_layout.addWidget(self._cancel_btn)
 
-        bottom_layout.addWidget(input_row)
+        bottom_layout.addWidget(input_wrapper)
         layout.addWidget(bottom_container)
 
     def _connect_signals(self) -> None:

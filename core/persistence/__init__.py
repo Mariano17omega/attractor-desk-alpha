@@ -6,6 +6,7 @@ from .session_repository import SessionRepository
 from .message_repository import MessageRepository
 from .artifact_repository import ArtifactRepository
 from .settings_repository import SettingsRepository
+from .rag_repository import RagRepository
 
 __all__ = [
     "Database",
@@ -14,4 +15,5 @@ __all__ = [
     "MessageRepository",
     "ArtifactRepository",
     "SettingsRepository",
+    "RagRepository",
 ]

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from core.graphs.open_canvas.state import OpenCanvasState, OpenCanvasReturnType
 from core.graphs.open_canvas.prompts import NEW_ARTIFACT_PROMPT
+from core.graphs.open_canvas.nodes.rag_utils import build_rag_prompt
 from core.llm import get_chat_model
 from core.utils.reflections import get_formatted_reflections
 from core.store import get_store
@@ -74,6 +75,7 @@ async def generate_artifact(
         reflections=reflections_str,
         disableChainOfThought="",  # Not using chain of thought
     )
+    formatted_prompt += build_rag_prompt(state)
     
     # Bind tool
     model_with_tool = model.bind_tools(

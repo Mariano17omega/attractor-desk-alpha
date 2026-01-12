@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from core.graphs.open_canvas.state import OpenCanvasState, OpenCanvasReturnType
 from core.graphs.open_canvas.prompts import UPDATE_ENTIRE_ARTIFACT_PROMPT, OPTIONALLY_UPDATE_META_PROMPT
+from core.graphs.open_canvas.nodes.rag_utils import build_rag_prompt
 from core.llm import get_chat_model
 from core.utils.reflections import get_formatted_reflections
 from core.utils.artifacts import get_artifact_content, is_artifact_markdown_content
@@ -99,6 +100,7 @@ async def rewrite_artifact(
         reflections=reflections_str,
         updateMetaPrompt=update_meta,
     )
+    formatted_prompt += build_rag_prompt(state)
     
     # Bind tool for structured output
     model_with_tool = model.bind_tools(

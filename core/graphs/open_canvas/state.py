@@ -136,6 +136,19 @@ class OpenCanvasState(BaseModel):
         default=None,
         alias="webSearchResults"
     )
+
+    # RAG state
+    rag_enabled: Optional[bool] = None
+    rag_scope: Optional[str] = None
+    rag_query: Optional[str] = None
+    rag_queries: Optional[list[str]] = None
+    rag_should_retrieve: Optional[bool] = None
+    rag_candidates: Optional[list[dict]] = None
+    rag_context: Optional[str] = None
+    rag_citations: Optional[list[dict]] = None
+    rag_grounded: Optional[bool] = None
+    rag_retrieval_debug: Optional[dict] = None
+    rag_selected_chunk_ids: Optional[list[str]] = None
     
     class Config:
         arbitrary_types_allowed = True

@@ -20,6 +20,7 @@ from core.graphs.open_canvas.nodes import (
     update_highlighted_text,
     custom_action,
 )
+from core.graphs.rag.graph import graph as rag_graph
 from core.constants import CHARACTER_MAX
 
 
@@ -108,6 +109,7 @@ builder = StateGraph(OpenCanvasState)
 
 # Add nodes
 builder.add_node("generatePath", generate_path)
+builder.add_node("ragRetrieve", rag_graph)
 builder.add_node("replyToGeneralInput", reply_to_general_input)
 builder.add_node("rewriteArtifact", rewrite_artifact)
 builder.add_node("rewriteArtifactTheme", rewrite_artifact_theme)
@@ -135,12 +137,22 @@ builder.add_conditional_edges(
         "updateArtifact": "updateArtifact",
         "rewriteArtifactTheme": "rewriteArtifactTheme",
         "rewriteCodeArtifactTheme": "rewriteCodeArtifactTheme",
-        "replyToGeneralInput": "replyToGeneralInput",
-        "generateArtifact": "generateArtifact",
-        "rewriteArtifact": "rewriteArtifact",
+        "replyToGeneralInput": "ragRetrieve",
+        "generateArtifact": "ragRetrieve",
+        "rewriteArtifact": "ragRetrieve",
         "customAction": "customAction",
         "updateHighlightedText": "updateHighlightedText",
         "webSearch": "webSearch",
+    },
+)
+
+builder.add_conditional_edges(
+    "ragRetrieve",
+    route_node,
+    {
+        "replyToGeneralInput": "replyToGeneralInput",
+        "generateArtifact": "generateArtifact",
+        "rewriteArtifact": "rewriteArtifact",
     },
 )
 
@@ -159,8 +171,8 @@ builder.add_conditional_edges(
     "routePostWebSearch",
     route_node,
     {
-        "generateArtifact": "generateArtifact",
-        "rewriteArtifact": "rewriteArtifact",
+        "generateArtifact": "ragRetrieve",
+        "rewriteArtifact": "ragRetrieve",
     },
 )
 

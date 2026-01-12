@@ -6,6 +6,7 @@ from langgraph.config import RunnableConfig
 
 from core.graphs.open_canvas.state import OpenCanvasState, OpenCanvasReturnType
 from core.graphs.open_canvas.prompts import CURRENT_ARTIFACT_PROMPT, NO_ARTIFACT_PROMPT
+from core.graphs.open_canvas.nodes.rag_utils import build_rag_prompt
 from core.llm import get_chat_model
 from core.utils.reflections import get_formatted_reflections
 from core.utils.artifacts import get_artifact_content, format_artifact_content_with_template
@@ -50,6 +51,7 @@ async def reply_to_general_input(
         )
     else:
         artifact_prompt = NO_ARTIFACT_PROMPT
+    rag_prompt = build_rag_prompt(state)
     
     # Build prompt
     prompt = f"""You are an AI assistant tasked with responding to the users question.
@@ -62,6 +64,7 @@ You also have the following reflections on style guidelines and general memories
 </reflections>
 
 {artifact_prompt}"""
+    prompt += rag_prompt
 
     # Get messages
     messages = state.internal_messages if state.internal_messages else state.messages

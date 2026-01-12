@@ -96,3 +96,6 @@ THINKING_MODELS = [
 
 # Default model for OpenRouter
 DEFAULT_MODEL = "anthropic/claude-3.5-sonnet"
+
+# Default embeddings model for OpenRouter
+DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"

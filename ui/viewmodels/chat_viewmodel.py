@@ -11,8 +11,10 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from core.graphs.open_canvas import graph
 from core.models import Message, MessageRole, Session
+from core.constants import DEFAULT_EMBEDDING_MODEL
 from core.persistence import ArtifactRepository, MessageRepository, SessionRepository
 from core.services.docling_service import DoclingService, PdfConversionResult
+from core.services.rag_service import RagIndexRequest, RagService
 from core.types import (
     ArtifactCollectionV1,
     ArtifactEntry,
@@ -69,6 +71,7 @@ class ChatViewModel(QObject):
         artifact_repository: ArtifactRepository,
         session_repository: SessionRepository,
         settings_viewmodel: SettingsViewModel,
+        rag_service: Optional[RagService] = None,
         parent: Optional[QObject] = None,
     ):
         super().__init__(parent)
@@ -76,6 +79,7 @@ class ChatViewModel(QObject):
         self._artifact_repository = artifact_repository
         self._session_repository = session_repository
         self._settings_viewmodel = settings_viewmodel
+        self._rag_service = rag_service
 
         self._messages: list[BaseMessage] = []
         self._artifact: Optional[ArtifactV3] = None
@@ -89,6 +93,7 @@ class ChatViewModel(QObject):
         # PDF import service
         self._docling_service = DoclingService(self)
         self._docling_service.conversion_complete.connect(self._on_pdf_conversion_complete)
+        self._pending_pdf_path: Optional[str] = None
 
         self._settings: dict = {
             "model": "anthropic/claude-3.5-sonnet",
@@ -205,6 +210,17 @@ class ChatViewModel(QObject):
                 "temperature": self._settings.get("temperature", 0.5),
                 "max_tokens": self._settings.get("max_tokens", 4096),
                 "api_key": self._settings_viewmodel.api_key or None,
+                "session_id": self._current_session.id,
+                "workspace_id": self._current_session.workspace_id,
+                "rag_enabled": self._settings_viewmodel.rag_enabled,
+                "rag_scope": self._settings_viewmodel.rag_scope,
+                "rag_k_lex": self._settings_viewmodel.rag_k_lex,
+                "rag_k_vec": self._settings_viewmodel.rag_k_vec,
+                "rag_rrf_k": self._settings_viewmodel.rag_rrf_k,
+                "rag_max_candidates": self._settings_viewmodel.rag_max_candidates,
+                "rag_embedding_model": self._settings_viewmodel.rag_embedding_model,
+                "rag_enable_query_rewrite": self._settings_viewmodel.rag_enable_query_rewrite,
+                "rag_enable_llm_rerank": self._settings_viewmodel.rag_enable_llm_rerank,
             }
         }
         
@@ -237,6 +253,7 @@ class ChatViewModel(QObject):
                     self._artifact,
                 )
             self.artifact_changed.emit()
+            self._index_active_text_artifact()
             print(f"[DEBUG] Artifact emitted with {len(self._artifact.contents)} contents")
         else:
             print(f"[DEBUG] No artifact in result. 'artifact' key exists: {'artifact' in result}")
@@ -326,6 +343,7 @@ class ChatViewModel(QObject):
             return
 
         self.pdf_import_status.emit(f"Converting PDF: {pdf_path}")
+        self._pending_pdf_path = pdf_path
         self._docling_service.convert_pdf(pdf_path)
 
     def _on_pdf_conversion_complete(self, result: PdfConversionResult) -> None:
@@ -379,3 +397,70 @@ class ChatViewModel(QObject):
         self._artifact = new_artifact
         self.artifact_changed.emit()
         self.pdf_import_status.emit(f"Imported: {result.source_filename}")
+
+        self._index_pdf_artifact(
+            entry_id=entry.id,
+            source_name=result.source_filename,
+            content=result.markdown,
+            source_path=self._pending_pdf_path,
+        )
+        self._pending_pdf_path = None
+
+    def _index_pdf_artifact(
+        self,
+        entry_id: str,
+        source_name: str,
+        content: str,
+        source_path: Optional[str],
+    ) -> None:
+        if not self._current_session or not self._rag_service:
+            return
+        request = RagIndexRequest(
+            workspace_id=self._current_session.workspace_id,
+            session_id=self._current_session.id,
+            artifact_entry_id=entry_id,
+            source_type="pdf",
+            source_name=source_name,
+            source_path=source_path,
+            content=content,
+            chunk_size_chars=self._settings_viewmodel.rag_chunk_size_chars,
+            chunk_overlap_chars=self._settings_viewmodel.rag_chunk_overlap_chars,
+            embedding_model=self._settings_viewmodel.rag_embedding_model
+            or DEFAULT_EMBEDDING_MODEL,
+            embeddings_enabled=self._settings_viewmodel.rag_enabled
+            and self._settings_viewmodel.rag_k_vec > 0,
+            api_key=self._settings_viewmodel.api_key or None,
+        )
+        self._rag_service.index_artifact(request)
+
+    def _index_active_text_artifact(self) -> None:
+        if not self._current_session or not self._rag_service:
+            return
+        if not self._settings_viewmodel.rag_index_text_artifacts:
+            return
+        collection = self._artifact_repository.get_collection(self._current_session.id)
+        if collection is None:
+            return
+        entry = collection.get_active_entry()
+        if entry is None or not entry.artifact.contents:
+            return
+        current_content = entry.artifact.contents[-1]
+        if getattr(current_content, "type", "") != "text":
+            return
+        source_name = current_content.title or "Untitled"
+        request = RagIndexRequest(
+            workspace_id=self._current_session.workspace_id,
+            session_id=self._current_session.id,
+            artifact_entry_id=entry.id,
+            source_type="artifact",
+            source_name=source_name,
+            content=current_content.full_markdown,
+            chunk_size_chars=self._settings_viewmodel.rag_chunk_size_chars,
+            chunk_overlap_chars=self._settings_viewmodel.rag_chunk_overlap_chars,
+            embedding_model=self._settings_viewmodel.rag_embedding_model
+            or DEFAULT_EMBEDDING_MODEL,
+            embeddings_enabled=self._settings_viewmodel.rag_enabled
+            and self._settings_viewmodel.rag_k_vec > 0,
+            api_key=self._settings_viewmodel.api_key or None,
+        )
+        self._rag_service.index_artifact(request)

@@ -10,9 +10,11 @@ from core.persistence import (
     ArtifactRepository,
     Database,
     MessageRepository,
+    RagRepository,
     SessionRepository,
     WorkspaceRepository,
 )
+from core.services import RagService
 from ui.styles import get_dark_theme_stylesheet, get_light_theme_stylesheet
 from ui.viewmodels.chat_viewmodel import ChatViewModel
 from ui.viewmodels.main_viewmodel import MainViewModel
@@ -35,6 +37,8 @@ class MainWindow(QMainWindow):
         self._session_repository = SessionRepository(self._database)
         self._message_repository = MessageRepository(self._database)
         self._artifact_repository = ArtifactRepository(self._database)
+        self._rag_repository = RagRepository(self._database)
+        self._rag_service = RagService(self._rag_repository)
 
         self._workspace_viewmodel = WorkspaceViewModel(
             workspace_repository=self._workspace_repository,
@@ -47,6 +51,7 @@ class MainWindow(QMainWindow):
             artifact_repository=self._artifact_repository,
             session_repository=self._session_repository,
             settings_viewmodel=self._settings_viewmodel,
+            rag_service=self._rag_service,
         )
         self._main_viewmodel = MainViewModel(
             chat_viewmodel=self._chat_viewmodel,

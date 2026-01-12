@@ -101,18 +101,18 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
 
-        self._chat_panel = ChatPanel(self._chat_viewmodel)
-        splitter.addWidget(self._chat_panel)
-
         self._sidebar = Sidebar(self._workspace_viewmodel)
         splitter.addWidget(self._sidebar)
+
+        self._chat_panel = ChatPanel(self._chat_viewmodel)
+        splitter.addWidget(self._chat_panel)
 
         self._artifact_panel = ArtifactPanel(self._chat_viewmodel)
         self._artifact_panel.setVisible(False)
         splitter.addWidget(self._artifact_panel)
 
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
 
         layout.addWidget(splitter)

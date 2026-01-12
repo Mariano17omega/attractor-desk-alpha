@@ -235,6 +235,17 @@ class ChatPanel(QFrame):
         header_layout.setContentsMargins(24, 0, 24, 0)
         header_layout.setSpacing(12)
 
+        self._sidebar_toggle_btn = QPushButton("☰")
+        self._sidebar_toggle_btn.setObjectName("iconButton")
+        self._sidebar_toggle_btn.setFixedSize(32, 32)
+        self._sidebar_toggle_btn.setToolTip("Toggle sidebar")
+        self._sidebar_toggle_btn.setStyleSheet(
+            "font-size: 16px; font-weight: bold; outline: none; border: none;"
+        )
+        self._sidebar_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._sidebar_toggle_btn.clicked.connect(self.sidebar_toggle_requested.emit)
+        header_layout.addWidget(self._sidebar_toggle_btn)
+
         title_container = QWidget()
         title_container.setStyleSheet("background-color: transparent;")
         title_layout_v = QVBoxLayout(title_container)
@@ -298,17 +309,6 @@ class ChatPanel(QFrame):
         self._memory_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._memory_btn.clicked.connect(self.memory_panel_requested.emit)
         right_layout.addWidget(self._memory_btn)
-
-        self._sidebar_toggle_btn = QPushButton("☰")
-        self._sidebar_toggle_btn.setObjectName("iconButton")
-        self._sidebar_toggle_btn.setFixedSize(32, 32)
-        self._sidebar_toggle_btn.setToolTip("Toggle sidebar")
-        self._sidebar_toggle_btn.setStyleSheet(
-            "font-size: 16px; font-weight: bold; outline: none; border: none;"
-        )
-        self._sidebar_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._sidebar_toggle_btn.clicked.connect(self.sidebar_toggle_requested.emit)
-        right_layout.addWidget(self._sidebar_toggle_btn)
 
         header_layout.addWidget(right_container)
         layout.addWidget(header)

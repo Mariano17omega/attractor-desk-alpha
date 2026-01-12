@@ -2,7 +2,9 @@
 Update artifact node - handles highlighted code updates.
 """
 
+from typing import Optional
 from langgraph.config import RunnableConfig
+from pydantic import BaseModel, Field
 
 from core.graphs.open_canvas.state import OpenCanvasState, OpenCanvasReturnType
 from core.graphs.open_canvas.prompts import UPDATE_HIGHLIGHTED_ARTIFACT_PROMPT
@@ -13,12 +15,21 @@ from core.store import get_store
 from core.types import ArtifactCodeV3, Reflections
 
 
+class UpdateArtifactSchema(BaseModel):
+    """Schema for the update_artifact tool."""
+    
+    replacement_content: str = Field(
+        description="The content to replace the highlighted text with. Do not include the surrounding code."
+    )
+
+
 async def update_artifact(
     state: OpenCanvasState,
     config: RunnableConfig,
 ) -> OpenCanvasReturnType:
     """
     Update a specific highlighted portion of the artifact.
+    Uses tool calling to ensure clean output.
     """
     if not state.artifact or not state.artifact.contents:
         raise ValueError("No artifact to update")
@@ -68,6 +79,19 @@ async def update_artifact(
         reflections=reflections_str,
     )
     
+
+    # Bind tool for structured output
+    model_with_tool = model.bind_tools(
+        [
+            {
+                "name": "update_artifact",
+                "description": "Update the highlighted text.",
+                "schema": UpdateArtifactSchema,
+            }
+        ],
+        tool_choice="update_artifact",
+    )
+    
     # Get user message
     messages = state.internal_messages if state.internal_messages else state.messages
     recent_message = messages[-1] if messages else None
@@ -76,12 +100,19 @@ async def update_artifact(
         raise ValueError("No message to process")
     
     # Invoke model
-    response = await model.ainvoke([
+    response = await model_with_tool.ainvoke([
         {"role": "system", "content": formatted_prompt},
         {"role": "user", "content": str(recent_message.content)},
     ])
     
-    updated_text = response.content if isinstance(response.content, str) else str(response.content)
+    # Extract tool call
+    if not response.tool_calls:
+        print("[WARN] No tool call in update_artifact, falling back to content")
+        updated_text = response.content if isinstance(response.content, str) else str(response.content)
+    else:
+        tool_call = response.tool_calls[0]
+        args = tool_call["args"]
+        updated_text = args.get("replacement_content", "")
     
     # Reconstruct full code
     new_code = before_highlight + updated_text + after_highlight

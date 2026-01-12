@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Ícone CPU LLM com circuitos espalhados (currentColor)">
+
+  <!-- =========================
+       DEFINIÇÕES
+  ========================== -->
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="currentColor" flood-opacity="0.25"></feDropShadow>
+    </filter>
+
+    <!-- Trilhas de circuito -->
+    <pattern id="microTraces" width="18" height="18" patternUnits="userSpaceOnUse">
+      <path d="M0 9 H18" stroke="currentColor" stroke-opacity="0.05" stroke-width="2"></path>
+      <path d="M9 0 V18" stroke="currentColor" stroke-opacity="0.04" stroke-width="2"></path>
+    </pattern>
+  </defs>
+
+  <!-- =========================
+       GRUPO PRINCIPAL
+  ========================== -->
+  <g filter="url(#shadow)" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- =========================
+         FIOS DE CIRCUITO (ESPALHADOS)
+    ========================== -->
+    <g fill="none" stroke-width="4" stroke-opacity="0.6">
+      <!-- Top -->
+      <path d="M140 34 V10 H80"></path>
+      <path d="M200 34 V14 H140"></path>
+      <path d="M260 34 V10 H300"></path>
+      <path d="M320 34 V18 H380"></path>
+
+      <!-- Bottom -->
+      <path d="M140 478 V502 H80"></path>
+      <path d="M200 478 V496 H140"></path>
+      <path d="M260 478 V502 H300"></path>
+      <path d="M320 478 V496 H380"></path>
+
+      <!-- Left -->
+      <path d="M34 140 H10 V80"></path>
+      <path d="M34 200 H14 V140"></path>
+      <path d="M34 260 H10 V300"></path>
+      <path d="M34 320 H18 V380"></path>
+
+      <!-- Right -->
+      <path d="M478 140 H502 V80"></path>
+      <path d="M478 200 H496 V140"></path>
+      <path d="M478 260 H502 V300"></path>
+      <path d="M478 320 H496 V380"></path>
+    </g>
+
+    <!-- Nós finais dos circuitos -->
+    <g fill="currentColor">
+      <circle cx="80" cy="10" r="5"></circle>
+      <circle cx="140" cy="14" r="5"></circle>
+      <circle cx="300" cy="10" r="5"></circle>
+      <circle cx="380" cy="18" r="5"></circle>
+
+      <circle cx="80" cy="502" r="5"></circle>
+      <circle cx="140" cy="496" r="5"></circle>
+      <circle cx="300" cy="502" r="5"></circle>
+      <circle cx="380" cy="496" r="5"></circle>
+
+      <circle cx="10" cy="80" r="5"></circle>
+      <circle cx="14" cy="140" r="5"></circle>
+      <circle cx="10" cy="300" r="5"></circle>
+      <circle cx="18" cy="380" r="5"></circle>
+
+      <circle cx="502" cy="80" r="5"></circle>
+      <circle cx="496" cy="140" r="5"></circle>
+      <circle cx="502" cy="300" r="5"></circle>
+      <circle cx="496" cy="380" r="5"></circle>
+    </g>
+
+    <!-- =========================
+         PINOS DO CHIP
+    ========================== -->
+    <g fill="currentColor" fill-opacity="0.9" stroke="none">
+      <!-- Top -->
+      <rect x="128" y="34" width="12" height="60" rx="6"></rect>
+      <rect x="192" y="34" width="12" height="60" rx="6"></rect>
+      <rect x="256" y="34" width="12" height="60" rx="6"></rect>
+      <rect x="320" y="34" width="12" height="60" rx="6"></rect>
+
+      <!-- Bottom -->
+      <rect x="128" y="418" width="12" height="60" rx="6"></rect>
+      <rect x="192" y="418" width="12" height="60" rx="6"></rect>
+      <rect x="256" y="418" width="12" height="60" rx="6"></rect>
+      <rect x="320" y="418" width="12" height="60" rx="6"></rect>
+
+      <!-- Left -->
+      <rect x="34" y="128" width="60" height="12" rx="6"></rect>
+      <rect x="34" y="192" width="60" height="12" rx="6"></rect>
+      <rect x="34" y="256" width="60" height="12" rx="6"></rect>
+      <rect x="34" y="320" width="60" height="12" rx="6"></rect>
+
+      <!-- Right -->
+      <rect x="418" y="128" width="60" height="12" rx="6"></rect>
+      <rect x="418" y="192" width="60" height="12" rx="6"></rect>
+      <rect x="418" y="256" width="60" height="12" rx="6"></rect>
+      <rect x="418" y="320" width="60" height="12" rx="6"></rect>
+    </g>
+
+    <!-- =========================
+         CORPO DO CHIP
+    ========================== -->
+    <rect x="96" y="96" width="320" height="320" rx="52" fill="none" stroke-width="14"></rect>
+
+    <rect x="124" y="124" width="264" height="264" rx="40" fill="url(#microTraces)" stroke="none"></rect>
+
+    <!-- =========================
+         NÚCLEO LLM
+    ========================== -->
+    <rect x="192" y="192" width="128" height="128" rx="26" fill="none" stroke-width="8"></rect>
+
+    <rect x="216" y="216" width="80" height="80" rx="16" fill="none" stroke-width="4" stroke-opacity="0.6"></rect>
+
+    <!-- Fluxo central -->
+    <g stroke-width="5" stroke-opacity="0.7">
+      <path d="M256 160 V192"></path>
+      <path d="M256 320 V352"></path>
+      <path d="M160 256 H192"></path>
+      <path d="M320 256 H352"></path>
+    </g>
+
+    <!-- Nós do núcleo -->
+    <g fill="currentColor">
+      <circle cx="256" cy="160" r="6"></circle>
+      <circle cx="256" cy="352" r="6"></circle>
+      <circle cx="160" cy="256" r="6"></circle>
+      <circle cx="352" cy="256" r="6"></circle>
+    </g>
+
+    <!-- Marca de orientação -->
+    <circle cx="136" cy="136" r="10" fill="currentColor"></circle>
+
+  </g>
+</svg>

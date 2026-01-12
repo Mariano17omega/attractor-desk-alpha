@@ -1,262 +1,456 @@
-"""
-Chat panel widget for Open Canvas.
-"""
+"""Chat panel widget for message display and input."""
 
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+from PySide6.QtCore import Signal, Qt, QEvent
+from PySide6.QtGui import QKeySequence, QPixmap
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QComboBox,
+    QFrame,
     QHBoxLayout,
-    QTextEdit,
+    QLabel,
     QPushButton,
     QScrollArea,
-    QLabel,
-    QFrame,
+    QSizePolicy,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent
 
 from ui.viewmodels.chat_viewmodel import ChatViewModel
 
 
+AVATAR_SIZE = 32
+PROFILE_DIR = Path(__file__).resolve().parents[1] / "assets" / "profile"
+
+
+def _resolve_avatar_path(agent_name: str, is_user: bool) -> Optional[Path]:
+    if is_user:
+        candidate = PROFILE_DIR / "use.png"
+        return candidate if candidate.exists() else None
+    if not agent_name:
+        return None
+    normalized = agent_name.strip().lower()
+    candidates = [normalized, "kurisu"]
+    for name in candidates:
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            path = PROFILE_DIR / f"{name}{ext}"
+            if path.exists():
+                return path
+    return None
+
+
+def _create_avatar_label(agent_name: str, is_user: bool) -> QLabel:
+    label = QLabel()
+    label.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    label.setObjectName("userAvatar" if is_user else "assistantAvatar")
+    avatar_path = _resolve_avatar_path(agent_name, is_user)
+    if avatar_path:
+        pixmap = QPixmap(str(avatar_path)).scaled(
+            AVATAR_SIZE,
+            AVATAR_SIZE,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        label.setPixmap(pixmap)
+    else:
+        label.setText("U" if is_user else "A")
+    return label
+
+
 class MessageBubble(QFrame):
-    """A single message bubble in the chat."""
-    
-    def __init__(self, content: str, is_user: bool = False, parent=None):
+    """Widget for displaying a single message."""
+
+    def __init__(
+        self,
+        content: str,
+        is_user: bool = False,
+        agent_name: str = "Assistant",
+        parent: Optional[QWidget] = None,
+    ):
         super().__init__(parent)
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(6)
-        
-        # Role label
-        role_label = QLabel("You" if is_user else "Assistant")
-        role_label.setStyleSheet("""
-            font-weight: 600;
-            font-size: 12px;
-            color: #666666;
-        """)
-        layout.addWidget(role_label)
-        
-        # Content label
+        self.setObjectName("messageRow")
+
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(10, 6, 10, 6)
+        main_layout.setSpacing(12)
+
+        avatar_label = _create_avatar_label(agent_name, is_user)
+
+        bubble = QFrame()
+        bubble.setObjectName("userMessage" if is_user else "assistantMessage")
+        bubble.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+        bubble.setMaximumWidth(600)
+
+        bubble_layout = QVBoxLayout(bubble)
+        bubble_layout.setContentsMargins(12, 8, 12, 8)
+        bubble_layout.setSpacing(4)
+
+        if not is_user:
+            role_label = QLabel(agent_name)
+            role_label.setObjectName("roleLabel")
+            role_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #9CA3AF;")
+            bubble_layout.addWidget(role_label)
+
         content_label = QLabel(content)
         content_label.setWordWrap(True)
-        content_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        content_label.setStyleSheet("""
-            font-size: 14px;
-            line-height: 1.5;
-            color: #1a1a1a;
-        """)
-        layout.addWidget(content_label)
-        
-        # Styling based on role
+        content_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        content_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+        )
+        bubble_layout.addWidget(content_label)
+
         if is_user:
-            self.setStyleSheet("""
-                QFrame {
-                    background-color: #e8f4fd;
-                    border-radius: 12px;
-                    margin-left: 60px;
-                    margin-right: 8px;
-                    margin-top: 4px;
-                    margin-bottom: 4px;
-                }
-            """)
+            main_layout.addStretch()
+            main_layout.addWidget(bubble, 0, Qt.AlignmentFlag.AlignTop)
+            main_layout.addWidget(avatar_label, 0, Qt.AlignmentFlag.AlignTop)
         else:
-            self.setStyleSheet("""
-                QFrame {
-                    background-color: #f5f5f5;
-                    border-radius: 12px;
-                    margin-left: 8px;
-                    margin-right: 60px;
-                    margin-top: 4px;
-                    margin-bottom: 4px;
-                }
-            """)
+            main_layout.addWidget(avatar_label, 0, Qt.AlignmentFlag.AlignTop)
+            main_layout.addWidget(bubble, 0, Qt.AlignmentFlag.AlignTop)
+            main_layout.addStretch()
 
 
-class ChatInput(QTextEdit):
-    """Custom text input with Enter to send support."""
-    
-    submitted = Signal(str)
-    
-    def __init__(self, parent=None):
+class MessageInput(QTextEdit):
+    """Text input with configurable shortcut to send and auto-resize behavior."""
+
+    send_requested = Signal()
+    MAX_HEIGHT = 150
+
+    def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setPlaceholderText("Type your message here... (Enter to send, Shift+Enter for new line)")
-        self.setMaximumHeight(120)
-        self.setMinimumHeight(50)
-        self.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #d0d0d0;
-                border-radius: 12px;
-                padding: 12px;
-                font-size: 14px;
-                background-color: #ffffff;
-                color: #1a1a1a;
-            }
-            QTextEdit:focus {
-                border-color: #4a90d9;
-            }
-        """)
-    
-    def keyPressEvent(self, event: QKeyEvent):
-        """Handle key press events."""
-        if event.key() == Qt.Key_Return and not event.modifiers():
-            # Enter without modifiers sends the message
-            text = self.toPlainText().strip()
-            if text:
-                self.submitted.emit(text)
-                self.clear()
-            return
-        super().keyPressEvent(event)
+        self._send_sequence = QKeySequence("Ctrl+Return")
+        self._update_placeholder()
+        self.document().setDocumentMargin(0)
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._min_height = self._calculate_min_height()
+        self.setFixedHeight(self._min_height)
+        self.textChanged.connect(self._adjust_height)
+
+    def _calculate_min_height(self) -> int:
+        line_height = self.fontMetrics().lineSpacing()
+        doc_margin = self.document().documentMargin()
+        margins = self.contentsMargins()
+        frame_width = self.frameWidth()
+        total_height = (
+            line_height
+            + 2 * doc_margin
+            + margins.top()
+            + margins.bottom()
+            + 2 * frame_width
+        )
+        return int(total_height)
+
+    def _refresh_min_height(self) -> None:
+        new_min_height = self._calculate_min_height()
+        if new_min_height != self._min_height:
+            self._min_height = new_min_height
+            self._adjust_height()
+
+    def changeEvent(self, event) -> None:
+        if event.type() in (QEvent.Type.StyleChange, QEvent.Type.FontChange):
+            if hasattr(self, "_min_height"):
+                self._refresh_min_height()
+        super().changeEvent(event)
+
+    def _adjust_height(self) -> None:
+        doc = self.document()
+        doc.setTextWidth(self.viewport().width())
+        doc_height = doc.size().height()
+        margins = self.contentsMargins()
+        frame_width = self.frameWidth()
+        total_height = int(doc_height + margins.top() + margins.bottom() + 2 * frame_width)
+        new_height = max(self._min_height, min(total_height, self.MAX_HEIGHT))
+        if total_height > self.MAX_HEIGHT:
+            self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        else:
+            self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        if self.height() != new_height:
+            self.setFixedHeight(new_height)
+
+    def set_send_sequence(self, sequence: str) -> None:
+        self._send_sequence = QKeySequence(sequence) if sequence else QKeySequence()
+        self._update_placeholder()
+
+    def _update_placeholder(self) -> None:
+        sequence_text = self._send_sequence.toString() or "Ctrl+Return"
+        self.setPlaceholderText(f"Type your message... ({sequence_text} to send)")
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not self._send_sequence.isEmpty():
+            pressed = QKeySequence(event.keyCombination())
+            if (
+                self._send_sequence.matches(pressed)
+                == QKeySequence.SequenceMatch.ExactMatch
+            ):
+                self.send_requested.emit()
+                return
+        if (
+            event.key() == Qt.Key.Key_Return
+            and event.modifiers() == Qt.KeyboardModifier.ControlModifier
+            and self._send_sequence.isEmpty()
+        ):
+            self.send_requested.emit()
+        else:
+            super().keyPressEvent(event)
 
 
-class ChatPanel(QWidget):
-    """Chat panel with message history and input."""
-    
-    def __init__(self, view_model: ChatViewModel, parent=None):
+class ChatPanel(QFrame):
+    """Chat panel widget for displaying and sending messages."""
+
+    sidebar_toggle_requested = Signal()
+    memory_panel_requested = Signal()
+
+    def __init__(
+        self,
+        viewmodel: ChatViewModel,
+        parent: Optional[QWidget] = None,
+    ):
         super().__init__(parent)
-        
-        self.view_model = view_model
-        
+        self.viewmodel = viewmodel
+        self.setObjectName("chatPanel")
         self._setup_ui()
-        self._setup_connections()
-    
-    def _setup_ui(self):
-        """Setup the chat panel UI."""
+        self._connect_signals()
+
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
-        
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #ffffff;
-            }
-        """)
-        
-        # Header
-        header_layout = QHBoxLayout()
-        header = QLabel("Chat")
-        header.setStyleSheet("""
-            font-size: 20px;
-            font-weight: 600;
-            color: #1a1a1a;
-        """)
-        header_layout.addWidget(header)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QFrame()
+        header.setFixedHeight(64)
+        header.setObjectName("chatHeader")
+
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(24, 0, 24, 0)
+        header_layout.setSpacing(12)
+
+        title_container = QWidget()
+        title_container.setStyleSheet("background-color: transparent;")
+        title_layout_v = QVBoxLayout(title_container)
+        title_layout_v.setContentsMargins(0, 0, 0, 0)
+        title_layout_v.setSpacing(2)
+        title_layout_v.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        title_row = QWidget()
+        title_row.setStyleSheet("background-color: transparent;")
+        title_row_layout = QHBoxLayout(title_row)
+        title_row_layout.setContentsMargins(0, 0, 0, 0)
+        title_row_layout.setSpacing(8)
+        title_row_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        status_dot = QFrame()
+        status_dot.setFixedSize(8, 8)
+        status_dot.setStyleSheet("background-color: #00C2FF; border-radius: 4px;")
+        title_row_layout.addWidget(status_dot)
+
+        self._header_label = QLabel("AMADEUS CHANNEL")
+        self._header_label.setObjectName("headerLabel")
+        title_row_layout.addWidget(self._header_label)
+
+        title_layout_v.addWidget(title_row)
+
+        subtitle = QLabel("SECURE CONNECTION // AMADEUS PROTOCOL V1.02")
+        subtitle.setStyleSheet(
+            "color: #6B7280; font-size: 8px; font-weight: bold; letter-spacing: 1.5px; "
+            "background-color: transparent; padding-left: 16px;"
+        )
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        title_layout_v.addWidget(subtitle)
+
+        header_layout.addWidget(title_container)
         header_layout.addStretch()
-        layout.addLayout(header_layout)
-        
-        # Messages area
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: 1px solid #e8e8e8;
-                border-radius: 12px;
-                background-color: #fafafa;
-            }
-        """)
-        
-        self.messages_container = QWidget()
-        self.messages_container.setStyleSheet("background-color: #fafafa;")
-        self.messages_layout = QVBoxLayout(self.messages_container)
-        self.messages_layout.setAlignment(Qt.AlignTop)
-        self.messages_layout.setSpacing(8)
-        self.messages_layout.setContentsMargins(8, 8, 8, 8)
-        
-        # Welcome message
-        self.welcome_label = QLabel("Start a conversation by typing a message below.")
-        self.welcome_label.setAlignment(Qt.AlignCenter)
-        self.welcome_label.setStyleSheet("""
-            color: #888888;
-            font-size: 14px;
-            padding: 40px;
-        """)
-        self.messages_layout.addWidget(self.welcome_label)
-        
-        self.scroll_area.setWidget(self.messages_container)
-        layout.addWidget(self.scroll_area, stretch=1)
-        
-        # Input area
-        input_layout = QHBoxLayout()
-        input_layout.setSpacing(12)
-        
-        self.input_field = ChatInput()
-        input_layout.addWidget(self.input_field, stretch=1)
-        
-        self.send_button = QPushButton("Send")
-        self.send_button.setMinimumWidth(80)
-        self.send_button.setMinimumHeight(50)
-        self.send_button.setStyleSheet("""
+
+        right_container = QWidget()
+        right_container.setStyleSheet("background-color: transparent;")
+        right_layout = QHBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(12)
+
+        agent_label = QLabel("PROTOCOL:")
+        agent_label.setStyleSheet(
+            "color: #6B7280; font-size: 10px; font-weight: bold; letter-spacing: 1px;"
+        )
+        right_layout.addWidget(agent_label)
+
+        self._agent_combo = QComboBox()
+        self._agent_combo.setMinimumWidth(150)
+        self._agent_combo.addItem("Default")
+        self._agent_combo.setToolTip("Select agent for this chat")
+        self._agent_combo.setAccessibleName("Agent selector")
+        self._agent_combo.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        right_layout.addWidget(self._agent_combo)
+
+        self._memory_btn = QPushButton("⛁ (0)")
+        self._memory_btn.setObjectName("iconButton")
+        self._memory_btn.setFixedSize(52, 32)
+        self._memory_btn.setToolTip("Toggle artifacts panel")
+        self._memory_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._memory_btn.clicked.connect(self.memory_panel_requested.emit)
+        right_layout.addWidget(self._memory_btn)
+
+        self._sidebar_toggle_btn = QPushButton("☰")
+        self._sidebar_toggle_btn.setObjectName("iconButton")
+        self._sidebar_toggle_btn.setFixedSize(32, 32)
+        self._sidebar_toggle_btn.setToolTip("Toggle sidebar")
+        self._sidebar_toggle_btn.setStyleSheet(
+            "font-size: 16px; font-weight: bold; outline: none; border: none;"
+        )
+        self._sidebar_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._sidebar_toggle_btn.clicked.connect(self.sidebar_toggle_requested.emit)
+        right_layout.addWidget(self._sidebar_toggle_btn)
+
+        header_layout.addWidget(right_container)
+        layout.addWidget(header)
+
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+
+        self._messages_container = QWidget()
+        self._messages_layout = QVBoxLayout(self._messages_container)
+        self._messages_layout.setContentsMargins(0, 20, 0, 20)
+        self._messages_layout.setSpacing(16)
+
+        self._history_loader = QPushButton("Load older messages...")
+        self._history_loader.setObjectName("historyLoader")
+        self._history_loader.setVisible(False)
+        self._messages_layout.addWidget(self._history_loader)
+
+        self._messages_layout.addStretch()
+
+        self._scroll_area.setWidget(self._messages_container)
+        layout.addWidget(self._scroll_area, 1)
+
+        bottom_container = QWidget()
+        bottom_layout = QVBoxLayout(bottom_container)
+        bottom_layout.setContentsMargins(24, 12, 24, 16)
+        bottom_layout.setSpacing(8)
+
+        input_row = QWidget()
+        input_row.setObjectName("chatInputRow")
+        input_row_layout = QHBoxLayout(input_row)
+        input_row_layout.setContentsMargins(0, 0, 0, 0)
+        input_row_layout.setSpacing(12)
+
+        self._add_btn = QPushButton("+")
+        self._add_btn.setObjectName("iconButton")
+        self._add_btn.setToolTip("Add attachment")
+        self._add_btn.setFixedSize(32, 32)
+        self._add_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        input_row_layout.addWidget(self._add_btn)
+
+        self._message_input = MessageInput()
+        self._message_input.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        input_row_layout.addWidget(self._message_input, 1)
+
+        self._send_btn = QPushButton("➤")
+        self._send_btn.setFixedSize(32, 32)
+        self._send_btn.setStyleSheet(
+            """
             QPushButton {
-                background-color: #4a90d9;
+                background-color: #00C2FF;
                 color: white;
-                border: none;
-                padding: 12px 24px;
-                border-radius: 12px;
-                font-size: 14px;
-                font-weight: 600;
+                border-radius: 6px;
+                font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #3a7fc8;
+                background-color: #3CBFF2;
             }
-            QPushButton:disabled {
-                background-color: #cccccc;
-            }
-        """)
-        input_layout.addWidget(self.send_button)
-        
-        layout.addLayout(input_layout)
-    
-    def _setup_connections(self):
-        """Setup signal/slot connections."""
-        self.send_button.clicked.connect(self._on_send)
-        self.input_field.submitted.connect(self._on_submit)
-        
-        # Connect to view model
-        self.view_model.message_added.connect(self._on_message_added)
-        self.view_model.is_loading_changed.connect(self._on_loading_changed)
-    
-    def _on_send(self):
-        """Handle send button click."""
-        text = self.input_field.toPlainText().strip()
-        if text:
-            self._on_submit(text)
-            self.input_field.clear()
-    
-    def _on_submit(self, text: str):
-        """Handle message submission."""
-        self.view_model.send_message(text)
-    
-    def _on_message_added(self, content: str, is_user: bool):
-        """Handle new message from view model."""
-        # Hide welcome message
-        self.welcome_label.hide()
-        
-        bubble = MessageBubble(content, is_user)
-        self.messages_layout.addWidget(bubble)
-        
-        # Scroll to bottom
-        self.scroll_area.verticalScrollBar().setValue(
-            self.scroll_area.verticalScrollBar().maximum()
+            """
         )
-    
-    def _on_loading_changed(self, is_loading: bool):
-        """Handle loading state changes."""
-        self.send_button.setEnabled(not is_loading)
-        self.input_field.setEnabled(not is_loading)
-        
-        if is_loading:
-            self.send_button.setText("...")
-        else:
-            self.send_button.setText("Send")
-    
-    def clear_messages(self):
-        """Clear all messages from the chat."""
-        # Remove all message bubbles
-        while self.messages_layout.count() > 1:
-            item = self.messages_layout.takeAt(1)
-            if item.widget():
+        self._send_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        input_row_layout.addWidget(self._send_btn)
+
+        self._cancel_btn = QPushButton("■")
+        self._cancel_btn.setFixedSize(32, 32)
+        self._cancel_btn.setVisible(False)
+        self._cancel_btn.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #EF4444;
+                color: white;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F87171;
+            }
+            """
+        )
+        self._cancel_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        input_row_layout.addWidget(self._cancel_btn)
+
+        bottom_layout.addWidget(input_row)
+        layout.addWidget(bottom_container)
+
+    def _connect_signals(self) -> None:
+        self._message_input.send_requested.connect(self._send_message)
+        self._send_btn.clicked.connect(self._send_message)
+        self._cancel_btn.clicked.connect(self.viewmodel.cancel_generation)
+        self.view_model_signals()
+
+    def view_model_signals(self) -> None:
+        self.viewmodel.message_added.connect(self._on_message_added)
+        self.viewmodel.messages_loaded.connect(self._on_messages_loaded)
+        self.viewmodel.is_loading_changed.connect(self._on_loading_changed)
+
+    def _send_message(self) -> None:
+        content = self._message_input.toPlainText().strip()
+        if not content:
+            return
+        self._message_input.clear()
+        self.viewmodel.send_message(content)
+
+    def _on_message_added(self, content: str, is_user: bool) -> None:
+        bubble = MessageBubble(content, is_user)
+        self._messages_layout.insertWidget(
+            self._messages_layout.count() - 1, bubble
+        )
+        self._scroll_to_bottom()
+
+    def _on_messages_loaded(self, messages: list[dict]) -> None:
+        self._clear_messages()
+        for message in messages:
+            bubble = MessageBubble(
+                message.get("content", ""),
+                message.get("is_user", False),
+            )
+            self._messages_layout.insertWidget(
+                self._messages_layout.count() - 1, bubble
+            )
+        self._scroll_to_bottom()
+
+    def _on_loading_changed(self, is_loading: bool) -> None:
+        self._send_btn.setVisible(not is_loading)
+        self._cancel_btn.setVisible(is_loading)
+        self._message_input.setEnabled(not is_loading)
+
+    def _scroll_to_bottom(self) -> None:
+        self._scroll_area.verticalScrollBar().setValue(
+            self._scroll_area.verticalScrollBar().maximum()
+        )
+
+    def _clear_messages(self) -> None:
+        for index in range(self._messages_layout.count() - 2, 0, -1):
+            item = self._messages_layout.takeAt(index)
+            if item and item.widget():
                 item.widget().deleteLater()
-        
-        # Show welcome message again
-        self.welcome_label.show()
+
+    def update_memory_count(self, count: int) -> None:
+        self._memory_btn.setText(f"⛁ ({count})")
+
+    def focus_input(self) -> None:
+        self._message_input.setFocus()

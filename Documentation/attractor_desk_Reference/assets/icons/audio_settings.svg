@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Ícone Áudio (waveform, currentColor)">
+
+  <g fill="currentColor">
+
+    <!-- Barra central (maior amplitude) -->
+    <rect x="244" y="120" width="24" height="272" rx="12"></rect>
+
+    <!-- Barras intermediárias internas -->
+    <rect x="208" y="160" width="24" height="192" rx="12"></rect>
+    <rect x="280" y="160" width="24" height="192" rx="12"></rect>
+
+    <!-- Barras intermediárias externas -->
+    <rect x="172" y="184" width="24" height="144" rx="12"></rect>
+    <rect x="316" y="184" width="24" height="144" rx="12"></rect>
+
+    <!-- Barras externas -->
+    <rect x="136" y="212" width="24" height="88" rx="12"></rect>
+    <rect x="352" y="212" width="24" height="88" rx="12"></rect>
+
+  </g>
+</svg>

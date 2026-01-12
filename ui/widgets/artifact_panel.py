@@ -30,17 +30,6 @@ class CodeEditor(QPlainTextEdit):
         font.setStyleHint(QFont.Monospace)
         self.setFont(font)
         
-        # Light theme for code
-        self.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #f8f9fa;
-                color: #1a1a1a;
-                border: none;
-                padding: 16px;
-                line-height: 1.5;
-            }
-        """)
-        
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
 
 
@@ -51,16 +40,6 @@ class MarkdownViewer(QTextEdit):
         super().__init__(parent)
         
         self.setReadOnly(True)
-        self.setStyleSheet("""
-            QTextEdit {
-                background-color: #ffffff;
-                color: #1a1a1a;
-                border: none;
-                padding: 20px;
-                font-size: 15px;
-                line-height: 1.6;
-            }
-        """)
 
 
 class ArtifactPanel(QWidget):
@@ -80,21 +59,13 @@ class ArtifactPanel(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
         
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #f8f9fa;
-            }
-        """)
+        self.setObjectName("artifactPanel")
         
         # Header area
         header_layout = QHBoxLayout()
         
         self.title_label = QLabel("Artifact")
-        self.title_label.setStyleSheet("""
-            font-size: 20px;
-            font-weight: 600;
-            color: #1a1a1a;
-        """)
+        self.title_label.setStyleSheet("font-size: 20px; font-weight: 600;")
         header_layout.addWidget(self.title_label)
         
         header_layout.addStretch()
@@ -103,72 +74,27 @@ class ArtifactPanel(QWidget):
         self.prev_button = QPushButton("◀")
         self.prev_button.setMaximumWidth(40)
         self.prev_button.setEnabled(False)
-        self.prev_button.setStyleSheet("""
-            QPushButton {
-                background-color: #e8e8e8;
-                color: #1a1a1a;
-                border: none;
-                padding: 8px;
-                border-radius: 6px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #d8d8d8;
-            }
-            QPushButton:disabled {
-                color: #aaaaaa;
-            }
-        """)
         header_layout.addWidget(self.prev_button)
         
         self.version_label = QLabel("v0/0")
-        self.version_label.setStyleSheet("""
-            padding: 0 12px;
-            color: #666666;
-            font-size: 13px;
-        """)
+        self.version_label.setStyleSheet("padding: 0 12px; font-size: 13px;")
         header_layout.addWidget(self.version_label)
         
         self.next_button = QPushButton("▶")
         self.next_button.setMaximumWidth(40)
         self.next_button.setEnabled(False)
-        self.next_button.setStyleSheet("""
-            QPushButton {
-                background-color: #e8e8e8;
-                color: #1a1a1a;
-                border: none;
-                padding: 8px;
-                border-radius: 6px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #d8d8d8;
-            }
-            QPushButton:disabled {
-                color: #aaaaaa;
-            }
-        """)
         header_layout.addWidget(self.next_button)
         
         layout.addLayout(header_layout)
         
         # Type indicator
         self.type_label = QLabel("No artifact generated yet")
-        self.type_label.setStyleSheet("""
-            color: #888888;
-            font-size: 13px;
-        """)
+        self.type_label.setStyleSheet("font-size: 13px;")
         layout.addWidget(self.type_label)
         
         # Content area
         self.content_frame = QFrame()
-        self.content_frame.setStyleSheet("""
-            QFrame {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
-                border-radius: 12px;
-            }
-        """)
+        self.content_frame.setObjectName("artifactContent")
         
         content_layout = QVBoxLayout(self.content_frame)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -176,25 +102,6 @@ class ArtifactPanel(QWidget):
         # Tab widget for code/text views
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.South)
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: none;
-                background-color: #ffffff;
-            }
-            QTabBar::tab {
-                background-color: #f0f0f0;
-                color: #666666;
-                padding: 10px 20px;
-                margin-right: 2px;
-                border-bottom-left-radius: 8px;
-                border-bottom-right-radius: 8px;
-            }
-            QTabBar::tab:selected {
-                background-color: #ffffff;
-                color: #1a1a1a;
-                font-weight: 600;
-            }
-        """)
         
         # Text viewer
         self.markdown_viewer = MarkdownViewer()
@@ -211,14 +118,7 @@ class ArtifactPanel(QWidget):
         self.placeholder = QLabel("💡 Ask me to create something!\n\nTry: \"Write a poem about Python\"\nor \"Create a Python function to sort a list\"")
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.placeholder.setWordWrap(True)
-        self.placeholder.setStyleSheet("""
-            QLabel {
-                color: #888888;
-                font-size: 15px;
-                padding: 60px 40px;
-                line-height: 1.8;
-            }
-        """)
+        self.placeholder.setStyleSheet("font-size: 15px; padding: 60px 40px;")
         layout.addWidget(self.placeholder)
         
         self._show_placeholder()

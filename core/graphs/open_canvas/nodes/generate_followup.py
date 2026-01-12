@@ -24,12 +24,14 @@ async def generate_followup(
     # Get model configuration
     configurable = config.get("configurable", {})
     model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
+    api_key = configurable.get("api_key")
     
     model = get_chat_model(
         model=model_name,
         temperature=0.7,
         max_tokens=250,
         streaming=False,
+        api_key=api_key,
     )
     
     # Get reflections (content only)

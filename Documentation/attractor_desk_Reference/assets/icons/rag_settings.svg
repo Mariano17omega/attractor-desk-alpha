@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Ícone RAG - banco de dados com circuitos elaborados (currentColor)">
+
+  <!-- =========================
+       DEFINIÇÕES
+  ========================== -->
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="currentColor" flood-opacity="0.25"></feDropShadow>
+    </filter>
+
+    <!-- Textura de dados -->
+    <pattern id="dataLines" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M6 10 H26" stroke="currentColor" stroke-opacity="0.05" stroke-width="2"></path>
+      <path d="M6 18 H22" stroke="currentColor" stroke-opacity="0.04" stroke-width="2"></path>
+      <path d="M6 26 H18" stroke="currentColor" stroke-opacity="0.03" stroke-width="2"></path>
+    </pattern>
+  </defs>
+
+  <!-- =========================
+       GRUPO PRINCIPAL
+  ========================== -->
+  <g filter="url(#shadow)" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- =========================
+         PILHA DE CILINDROS (DATABASE)
+    ========================== -->
+    <!-- Topo -->
+    <ellipse cx="256" cy="132" rx="120" ry="36" fill="none" stroke-width="10"></ellipse>
+
+    <path d="M136 132 V192" stroke-width="10"></path>
+    <path d="M376 132 V192" stroke-width="10"></path>
+
+    <ellipse cx="256" cy="192" rx="120" ry="36" fill="url(#dataLines)" stroke-width="8" stroke-opacity="0.6"></ellipse>
+
+    <!-- Meio -->
+    <path d="M136 192 V252" stroke-width="10"></path>
+    <path d="M376 192 V252" stroke-width="10"></path>
+
+    <ellipse cx="256" cy="252" rx="120" ry="36" fill="none" stroke-width="10"></ellipse>
+
+    <!-- Base -->
+    <path d="M136 252 V312" stroke-width="10"></path>
+    <path d="M376 252 V312" stroke-width="10"></path>
+
+    <ellipse cx="256" cy="312" rx="120" ry="36" fill="none" stroke-width="10"></ellipse>
+
+    <!-- Segmentação interna (chunks) -->
+    <g stroke-width="4" stroke-opacity="0.35">
+      <path d="M176 160 H336"></path>
+      <path d="M176 220 H336"></path>
+      <path d="M176 280 H336"></path>
+    </g>
+
+    <!-- =========================
+         CIRCUITOS ELABORADOS (BASE)
+    ========================== -->
+    <g stroke-width="6" stroke-opacity="0.55" fill="none">
+      <!-- Saídas principais -->
+      <path d="M176 348 V372 H112"></path>
+      <path d="M256 348 V388"></path>
+      <path d="M336 348 V372 H400"></path>
+
+      <!-- Ramificações secundárias -->
+      <path d="M112 372 V408 H72"></path>
+      <path d="M400 372 V408 H440"></path>
+
+      <path d="M256 388 H216 V420"></path>
+      <path d="M256 388 H296 V420"></path>
+    </g>
+
+    <!-- Trilhas finas adicionais -->
+    <g stroke-width="4" stroke-opacity="0.35">
+      <path d="M136 312 V340 H96"></path>
+      <path d="M376 312 V340 H416"></path>
+    </g>
+
+    <!-- =========================
+         NÓS / VIAS DE CIRCUITO
+    ========================== -->
+    <g fill="currentColor">
+      <!-- Nós dos chunks -->
+      <circle cx="176" cy="160" r="5"></circle>
+      <circle cx="336" cy="160" r="5"></circle>
+      <circle cx="176" cy="220" r="5"></circle>
+      <circle cx="336" cy="220" r="5"></circle>
+      <circle cx="176" cy="280" r="5"></circle>
+      <circle cx="336" cy="280" r="5"></circle>
+
+      <!-- Nós do circuito -->
+      <circle cx="176" cy="372" r="5"></circle>
+      <circle cx="256" cy="388" r="5"></circle>
+      <circle cx="336" cy="372" r="5"></circle>
+
+      <circle cx="112" cy="408" r="4"></circle>
+      <circle cx="400" cy="408" r="4"></circle>
+
+      <circle cx="216" cy="420" r="4"></circle>
+      <circle cx="296" cy="420" r="4"></circle>
+    </g>
+
+  </g>
+</svg>

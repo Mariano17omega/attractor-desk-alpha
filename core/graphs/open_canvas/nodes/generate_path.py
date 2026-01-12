@@ -73,8 +73,15 @@ async def _dynamic_determine_path(
     from pydantic import BaseModel, Field
     
     # Get model from config or use default
-    model_name = config.get("configurable", {}).get("model", "anthropic/claude-3.5-sonnet")
-    model = get_chat_model(model=model_name, temperature=0, streaming=False)
+    configurable = config.get("configurable", {})
+    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
+    api_key = configurable.get("api_key")
+    model = get_chat_model(
+        model=model_name,
+        temperature=0,
+        streaming=False,
+        api_key=api_key,
+    )
     
     # Determine artifact route based on presence (matches TypeScript exactly)
     has_artifact = state.artifact is not None and len(state.artifact.contents) > 0
@@ -151,4 +158,3 @@ async def _dynamic_determine_path(
     # print(f"[DEBUG] route: {route}")
     
     return {"next": route}
-

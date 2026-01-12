@@ -1,7 +1,8 @@
 """UI Widgets package."""
 
-from ui.widgets.chat_panel import ChatPanel
 from ui.widgets.artifact_panel import ArtifactPanel
-from ui.widgets.settings_dialog import SettingsDialog
+from ui.widgets.chat_panel import ChatPanel
+from ui.widgets.configuration import ConfigurationDialog
+from ui.widgets.sidebar import Sidebar
 
-__all__ = ["ChatPanel", "ArtifactPanel", "SettingsDialog"]
+__all__ = ["ArtifactPanel", "ChatPanel", "ConfigurationDialog", "Sidebar"]

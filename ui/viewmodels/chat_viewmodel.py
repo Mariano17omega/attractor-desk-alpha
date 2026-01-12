@@ -1,19 +1,19 @@
-"""
-Chat ViewModel for Open Canvas.
-Bridges the UI with the Core graph execution.
-"""
+"""Chat ViewModel for Open Canvas."""
 
 import asyncio
+from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
 from PySide6.QtCore import QObject, Signal, Slot, QThread
 
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
-from core.types import ArtifactV3
 from core.graphs.open_canvas import graph
-from core.store import get_store
+from core.models import Message, MessageRole, Session
+from core.persistence import ArtifactRepository, MessageRepository, SessionRepository
+from core.types import ArtifactV3
+from ui.viewmodels.settings_viewmodel import SettingsViewModel
 
 
 class GraphWorker(QThread):
@@ -44,30 +44,39 @@ class GraphWorker(QThread):
 
 
 class ChatViewModel(QObject):
-    """
-    ViewModel for the chat interface.
-    
-    Manages conversation state and artifact interactions.
-    """
-    
-    # Signals
-    message_added = Signal(str, bool)  # content, is_user
+    """ViewModel for the chat interface."""
+
+    message_added = Signal(str, bool)
+    messages_loaded = Signal(object)
     artifact_changed = Signal()
     is_loading_changed = Signal(bool)
     status_changed = Signal(str)
     error_occurred = Signal(str)
-    
-    def __init__(self, parent=None):
+    session_updated = Signal()
+
+    def __init__(
+        self,
+        message_repository: MessageRepository,
+        artifact_repository: ArtifactRepository,
+        session_repository: SessionRepository,
+        settings_viewmodel: SettingsViewModel,
+        parent: Optional[QObject] = None,
+    ):
         super().__init__(parent)
-        
-        self._messages: list = []
+        self._message_repository = message_repository
+        self._artifact_repository = artifact_repository
+        self._session_repository = session_repository
+        self._settings_viewmodel = settings_viewmodel
+
+        self._messages: list[BaseMessage] = []
         self._artifact: Optional[ArtifactV3] = None
         self._is_loading: bool = False
         self._assistant_id: str = str(uuid4())
-        
+        self._current_session: Optional[Session] = None
+
         self._worker: Optional[GraphWorker] = None
-        
-        # Settings with defaults
+        self._cancelled = False
+
         self._settings: dict = {
             "model": "anthropic/claude-3.5-sonnet",
             "temperature": 0.5,
@@ -75,10 +84,6 @@ class ChatViewModel(QObject):
             "streaming": True,
             "timeout": 120,
         }
-    
-    def set_settings(self, settings: dict):
-        """Update the settings."""
-        self._settings.update(settings)
     
     @property
     def messages(self) -> list:
@@ -94,11 +99,43 @@ class ChatViewModel(QObject):
     def is_loading(self) -> bool:
         """Check if currently loading."""
         return self._is_loading
+
+    @property
+    def current_session_id(self) -> Optional[str]:
+        return self._current_session.id if self._current_session else None
     
     def _set_loading(self, loading: bool):
         """Set loading state."""
         self._is_loading = loading
         self.is_loading_changed.emit(loading)
+
+    def load_session(self, session_id: str) -> None:
+        session = self._session_repository.get_by_id(session_id)
+        if session is None:
+            return
+        self._current_session = session
+        stored_messages = self._message_repository.get_by_session(session_id)
+        self._messages = []
+        for message in stored_messages:
+            if message.role == MessageRole.USER:
+                self._messages.append(HumanMessage(content=message.content))
+            elif message.role == MessageRole.ASSISTANT:
+                self._messages.append(AIMessage(content=message.content))
+        self._artifact = self._artifact_repository.get_for_session(session_id)
+        self.messages_loaded.emit(
+            [
+                {"content": msg.content, "is_user": isinstance(msg, HumanMessage)}
+                for msg in self._messages
+            ]
+        )
+        self.artifact_changed.emit()
+
+    def clear(self) -> None:
+        self._messages = []
+        self._artifact = None
+        self._current_session = None
+        self.messages_loaded.emit([])
+        self.artifact_changed.emit()
     
     @Slot(str)
     def send_message(self, content: str):
@@ -108,13 +145,31 @@ class ChatViewModel(QObject):
         Args:
             content: The user's message content
         """
-        if self._is_loading:
+        if self._is_loading or not self._current_session:
             return
+
+        self._cancelled = False
+
+        user_record = Message.create(
+            session_id=self._current_session.id,
+            role=MessageRole.USER,
+            content=content,
+        )
+        self._message_repository.add(user_record)
         
         # Add user message
         user_message = HumanMessage(content=content)
         self._messages.append(user_message)
         self.message_added.emit(content, True)
+
+        now = datetime.now()
+        if len(self._messages) == 1:
+            new_title = content.strip()[:50] or "New Session"
+            if self._current_session.title != new_title:
+                self._current_session.title = new_title
+        self._current_session.updated_at = now
+        self._session_repository.update(self._current_session)
+        self.session_updated.emit()
         
         # Start loading
         self._set_loading(True)
@@ -132,9 +187,11 @@ class ChatViewModel(QObject):
         config = {
             "configurable": {
                 "assistant_id": self._assistant_id,
-                "model": self._settings.get("model", "anthropic/claude-3.5-sonnet"),
+                "model": self._settings_viewmodel.default_model
+                or self._settings.get("model", "anthropic/claude-3.5-sonnet"),
                 "temperature": self._settings.get("temperature", 0.5),
                 "max_tokens": self._settings.get("max_tokens", 4096),
+                "api_key": self._settings_viewmodel.api_key or None,
             }
         }
         
@@ -146,6 +203,11 @@ class ChatViewModel(QObject):
     
     def _on_graph_finished(self, result: dict):
         """Handle successful graph execution."""
+        if self._cancelled:
+            self._cancelled = False
+            self._set_loading(False)
+            return
+
         self._set_loading(False)
         self.status_changed.emit("Ready")
         
@@ -156,6 +218,11 @@ class ChatViewModel(QObject):
         if "artifact" in result and result["artifact"]:
             print(f"[DEBUG] Artifact found in result: {type(result['artifact'])}")
             self._artifact = result["artifact"]
+            if self._current_session:
+                self._artifact_repository.save_for_session(
+                    self._current_session.id,
+                    self._artifact,
+                )
             self.artifact_changed.emit()
             print(f"[DEBUG] Artifact emitted with {len(self._artifact.contents)} contents")
         else:
@@ -174,6 +241,13 @@ class ChatViewModel(QObject):
                     if isinstance(msg, AIMessage):
                         content = msg.content if isinstance(msg.content, str) else str(msg.content)
                         if content:
+                            if self._current_session:
+                                assistant_record = Message.create(
+                                    session_id=self._current_session.id,
+                                    role=MessageRole.ASSISTANT,
+                                    content=content,
+                                )
+                                self._message_repository.add(assistant_record)
                             self._messages.append(msg)
                             self.message_added.emit(content, False)
                 except Exception as e:
@@ -210,7 +284,14 @@ class ChatViewModel(QObject):
     
     @Slot()
     def clear_conversation(self):
-        """Clear the conversation history."""
-        self._messages.clear()
-        self._artifact = None
-        self.artifact_changed.emit()
+        """Clear the conversation history (UI-only)."""
+        self.clear()
+
+    @Slot()
+    def cancel_generation(self):
+        """Cancel the current generation (best-effort)."""
+        if not self._is_loading:
+            return
+        self._cancelled = True
+        self._set_loading(False)
+        self.status_changed.emit("Cancelled")

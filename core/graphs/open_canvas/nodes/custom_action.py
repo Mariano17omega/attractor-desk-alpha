@@ -37,6 +37,7 @@ async def custom_action(
     # Get model configuration
     configurable = config.get("configurable", {})
     model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
+    api_key = configurable.get("api_key")
     user_id = configurable.get("user_id", "default")
     assistant_id = configurable.get("assistant_id", "default")
     
@@ -44,6 +45,7 @@ async def custom_action(
         model=model_name,
         temperature=0.5,
         streaming=False,
+        api_key=api_key,
     )
     
     # Get custom action from store

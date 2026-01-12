@@ -30,7 +30,7 @@ def main():
     
     # Create application
     app = QApplication(sys.argv)
-    app.setApplicationName("Open Canvas")
+    app.setApplicationName("Attractor Desk")
     app.setOrganizationName("OpenCanvas")
     
     # Note: High DPI scaling is enabled by default in Qt6

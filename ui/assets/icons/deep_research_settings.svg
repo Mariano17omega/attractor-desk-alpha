@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Ícone Deep Research com lupa externa (currentColor)">
+
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="currentColor" flood-opacity="0.25"></feDropShadow>
+    </filter>
+
+    <pattern id="analysisGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M0 12 H24" stroke="currentColor" stroke-opacity="0.05" stroke-width="2"></path>
+      <path d="M12 0 V24" stroke="currentColor" stroke-opacity="0.04" stroke-width="2"></path>
+    </pattern>
+
+    <pattern id="radialTraces" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M0 32 L32 0" stroke="currentColor" stroke-opacity="0.04" stroke-width="2"></path>
+    </pattern>
+  </defs>
+
+  <g filter="url(#shadow)" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- =========================
+         CAMADAS INTERNAS
+    ========================== -->
+    <circle cx="256" cy="256" r="150" fill="none" stroke-width="8" stroke-opacity="0.35"></circle>
+
+    <circle cx="256" cy="256" r="120" fill="url(#analysisGrid)" stroke-width="6" stroke-opacity="0.5"></circle>
+
+    <circle cx="256" cy="256" r="96" fill="url(#radialTraces)" stroke="none"></circle>
+
+    <!-- =========================
+         FOCO CENTRAL
+    ========================== -->
+    <circle cx="256" cy="256" r="64" fill="none" stroke-width="8"></circle>
+
+    <circle cx="256" cy="256" r="40" fill="none" stroke-width="4" stroke-opacity="0.6"></circle>
+
+    <g stroke-width="6" stroke-opacity="0.7">
+      <path d="M256 204 V228"></path>
+      <path d="M256 284 V308"></path>
+      <path d="M204 256 H228"></path>
+      <path d="M284 256 H308"></path>
+    </g>
+
+    <!-- =========================
+         NÓS DE DESCOBERTA
+    ========================== -->
+    <g fill="currentColor">
+      <circle cx="256" cy="106" r="6"></circle>
+      <circle cx="256" cy="406" r="6"></circle>
+      <circle cx="106" cy="256" r="6"></circle>
+      <circle cx="406" cy="256" r="6"></circle>
+
+      <circle cx="186" cy="186" r="5"></circle>
+      <circle cx="326" cy="186" r="5"></circle>
+      <circle cx="186" cy="326" r="5"></circle>
+      <circle cx="326" cy="326" r="5"></circle>
+    </g>
+
+    <g stroke-width="3" stroke-opacity="0.35">
+      <path d="M256 136 L256 106"></path>
+      <path d="M256 376 L256 406"></path>
+      <path d="M136 256 L106 256"></path>
+      <path d="M376 256 L406 256"></path>
+
+      <path d="M210 210 L186 186"></path>
+      <path d="M302 210 L326 186"></path>
+      <path d="M210 302 L186 326"></path>
+      <path d="M302 302 L326 326"></path>
+    </g>
+
+    <!-- =========================
+         LUPA EXTERNA
+    ========================== -->
+    <!-- Anel -->
+    <circle cx="256" cy="256" r="186" fill="none" stroke-width="12"></circle>
+
+    <!-- Cabo (mais grosso, mais longo, sem invadir o anel) -->
+    <!-- Ponto inicial deslocado para fora do raio (186 + 6) -->
+    <path d="M396 396 L476 476" stroke-width="18"></path>
+
+  </g>
+</svg>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Ícone Shortcuts (ASDW minimalista)">
+
+  <!-- Parâmetros geométricos:
+       tecla = 112×112
+       gap    = 24
+  -->
+
+  <g fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- =========================
+         TECLA W (TOPO)
+    ========================== -->
+    <rect x="200" y="96" width="112" height="112" rx="20"></rect>
+
+    <!-- =========================
+         TECLAS A S D (BASE)
+    ========================== -->
+    <rect x="64" y="232" width="112" height="112" rx="20"></rect>
+
+    <rect x="200" y="232" width="112" height="112" rx="20"></rect>
+
+    <rect x="336" y="232" width="112" height="112" rx="20"></rect>
+
+  </g>
+</svg>

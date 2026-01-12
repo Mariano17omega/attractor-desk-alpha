@@ -1,45 +1,42 @@
-# Open Canvas Python
+# Attractor Desk
 
-A Python port of [Open Canvas](https://github.com/langchain-ai/open-canvas) - an AI-powered writing and coding assistant with artifact management.
+![Status: Alpha](https://img.shields.io/badge/Status-Alpha-orange.svg)
+
+**Attractor Desk** is a native Python desktop application that redefines AI-assisted coding and writing. Evolved from the [Open Canvas](https://github.com/langchain-ai/open-canvas) concept, it combines a powerful cognitive engine with a seamless user interface to manage "artifacts"—structured content that you iterate on collaboratively with AI.
 
 ## Features
 
-- **Chat Interface**: Interact with AI to generate and modify content
-- **Artifact Management**: Create and manage text and code artifacts with version history
-- **Multiple LLM Support**: Uses OpenRouter for unified access to multiple AI models
-- **Memory/Reflections**: Persistent user preferences and style guidelines
-- **Web Search** (Optional): Search the web for additional context via Exa
-- **Desktop Application**: Native PySide6 UI
+- **🧠 Cognitive Engine**: Built on LangGraph, the agent understands context, manages state, and reasons about your tasks.
+- **📄 Artifact Management**: Treat code and text as first-class citizens. Version control, diff viewing, and targeted updates are built-in.
+- **🖥️ Native Desktop Experience**: precise control and high performance using PySide6 (Qt).
+- **🔌 Multi-LLM Support**: Connect to Claude, GPT-4, Llama 3, and more via OpenRouter.
+- **💾 Persistent Memory**: The system remembers your style guidelines and key project details across sessions.
+- **🌐 Deep Search**: Integrated Agentic web search (via Exa) for fact-checking and research.
 
 ## Architecture
 
-```
-open-canvas-py/
-├── core/           # Reusable backend (no UI dependencies)
-│   ├── graphs/     # LangGraph graph definitions
-│   ├── llm/        # OpenRouter LLM wrapper
-│   ├── providers/  # External service integrations
-│   ├── store/      # In-memory data store
-│   └── utils/      # Utility functions
-├── ui/             # PySide6 desktop application
-└── API_KEY.txt     # API key configuration
-```
+Want to understand how it works under the hood? Check out our detailed **[Architecture Documentation](ARCHITECTURE.md)**.
+
+We follow a strict separation of concerns:
+- **Core**: UI-agnostic business logic and state management.
+- **UI**: MVVM-based presentation layer using Qt.
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.11+
-- OpenRouter API key
+- Python 3.11 or higher
+- An [OpenRouter](https://openrouter.ai/) API key
 
 ### Setup
 
-1. Clone the repository:
+1. **Clone the repository:**
    ```bash
-   cd open-canvas-py
+   git clone https://github.com/yourusername/attractor-desk.git
+   cd attractor-desk
    ```
 
-2. Create a virtual environment:
+2. **Create and activate a virtual environment:**
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # Linux/macOS
@@ -47,76 +44,62 @@ open-canvas-py/
    .venv\Scripts\activate     # Windows
    ```
 
-3. Install dependencies:
+3. **Install in editable mode:**
    ```bash
-   pip install -r requirements.txt
+   pip install -e .
    ```
 
-4. Configure API keys:
+4. **Configure your API keys:**
    ```bash
    cp API_KEY.txt.example API_KEY.txt
-   # Edit API_KEY.txt with your keys
    ```
-
-## Configuration
-
-Edit `API_KEY.txt` with your API keys:
-
-```
-# Required
-OPENROUTER_API_KEY=sk-or-...
-
-# Optional - LangSmith tracing
-LANGSMITH_API_KEY=ls-...
-
-# Optional - Web search
-EXA_API_KEY=...
-
-# Optional - Web scraping
-FIRECRAWL_API_KEY=...
-```
+   Edit `API_KEY.txt` and add your `OPENROUTER_API_KEY`.
 
 ## Usage
 
-### Run the Desktop Application
+### Running the Application
+
+Once installed, you can start the application from anywhere in your virtual environment:
+
+```bash
+attractor-desk
+```
+
+Alternatively, you can run it as a module:
 
 ```bash
 python -m ui.main
 ```
 
-### Use the Core Library
+### Key Configuration
 
-```python
-from core.graphs.open_canvas import graph
-from langchain_core.messages import HumanMessage
+Manage your settings in `API_KEY.txt`:
 
-# Run the graph
-result = await graph.ainvoke({
-    "messages": [HumanMessage(content="Write me a poem about Python")]
-})
+```ini
+# Required
+OPENROUTER_API_KEY=sk-or-...
 
-print(result["artifact"])
+# Optional: Enable deep search
+EXA_API_KEY=...
+
+# Optional: Enable LangSmith tracing
+LANGSMITH_API_KEY=ls-...
 ```
 
-## Development
+## contributing
 
-### Run Tests
+We welcome contributions! Please see the `core/` directory for backend logic and `ui/` for frontend components.
 
-```bash
-pytest
-```
-
-### Code Formatting
-
-```bash
-black .
-ruff check .
-```
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
-MIT License - see the original [Open Canvas](https://github.com/langchain-ai/open-canvas) project for details.
+This project is licensed under the MIT License - see the `pyproject.toml` file for details.
 
 ## Acknowledgments
 
-This project is a Python port of [Open Canvas](https://github.com/langchain-ai/open-canvas) by LangChain, Inc.
+This project is a Python port and evolution of [Open Canvas](https://github.com/langchain-ai/open-canvas) by LangChain, Inc.

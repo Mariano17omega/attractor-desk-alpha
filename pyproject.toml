@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "open-canvas-py"
-version = "0.1.0"
+name = "attractor-desk"
+version = "0.3.0"
 description = "Python port of Open Canvas - AI-powered writing and coding assistant"
 readme = "README.md"
 license = {text = "MIT"}
@@ -43,7 +43,7 @@ search = [
 ]
 
 [project.scripts]
-open-canvas = "ui.main:main"
+attractor-desk = "ui.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -37,6 +37,7 @@ class SettingsViewModel(QObject):
     theme_changed = Signal(ThemeMode)
     transparency_changed = Signal(int)
     keep_above_changed = Signal(bool)
+    deep_search_toggled = Signal(bool)
 
     KEY_THEME_MODE = "theme.mode"
     KEY_FONT_FAMILY = "theme.font_family"
@@ -45,6 +46,11 @@ class SettingsViewModel(QObject):
     KEY_DEFAULT_MODEL = "models.default"
     KEY_MODEL_LIST = "models.list"
     KEY_API_KEY = "models.api_key"
+    KEY_DEEP_SEARCH_ENABLED = "deep_search.enabled"
+    KEY_EXA_API_KEY = "deep_search.exa_api_key"
+    KEY_FIRECRAWL_API_KEY = "deep_search.firecrawl_api_key"
+    KEY_SEARCH_PROVIDER = "deep_search.provider"
+    KEY_DEEP_SEARCH_NUM_RESULTS = "deep_search.num_results"
 
     def __init__(
         self,
@@ -62,6 +68,11 @@ class SettingsViewModel(QObject):
         self._api_key: str = ""
         self._default_model: str = DEFAULT_MODEL
         self._models: list[str] = DEFAULT_MODELS.copy()
+        self._deep_search_enabled: bool = False
+        self._exa_api_key: str = ""
+        self._firecrawl_api_key: str = ""
+        self._search_provider: str = "exa"
+        self._deep_search_num_results: int = 5
 
         self._saved_state: dict[str, object] = {}
         self.load_settings()
@@ -146,6 +157,62 @@ class SettingsViewModel(QObject):
         self._models.append(model_id)
         self.settings_changed.emit()
 
+    @property
+    def deep_search_enabled(self) -> bool:
+        return self._deep_search_enabled
+
+    @deep_search_enabled.setter
+    def deep_search_enabled(self, value: bool) -> None:
+        value = bool(value)
+        if self._deep_search_enabled != value:
+            self._deep_search_enabled = value
+            self.deep_search_toggled.emit(value)
+            self.settings_changed.emit()
+
+    @property
+    def exa_api_key(self) -> str:
+        return self._exa_api_key
+
+    @exa_api_key.setter
+    def exa_api_key(self, value: str) -> None:
+        value = value or ""
+        if self._exa_api_key != value:
+            self._exa_api_key = value
+            self.settings_changed.emit()
+
+    @property
+    def deep_search_num_results(self) -> int:
+        return self._deep_search_num_results
+
+    @deep_search_num_results.setter
+    def deep_search_num_results(self, value: int) -> None:
+        value = max(1, min(20, int(value)))
+        if self._deep_search_num_results != value:
+            self._deep_search_num_results = value
+            self.settings_changed.emit()
+
+    @property
+    def firecrawl_api_key(self) -> str:
+        return self._firecrawl_api_key
+
+    @firecrawl_api_key.setter
+    def firecrawl_api_key(self, value: str) -> None:
+        value = value or ""
+        if self._firecrawl_api_key != value:
+            self._firecrawl_api_key = value
+            self.settings_changed.emit()
+
+    @property
+    def search_provider(self) -> str:
+        return self._search_provider
+
+    @search_provider.setter
+    def search_provider(self, value: str) -> None:
+        value = value if value in ("exa", "firecrawl") else "exa"
+        if self._search_provider != value:
+            self._search_provider = value
+            self.settings_changed.emit()
+
     def snapshot(self) -> dict[str, object]:
         return {
             "theme_mode": self._theme_mode,
@@ -155,6 +222,11 @@ class SettingsViewModel(QObject):
             "api_key": self._api_key,
             "default_model": self._default_model,
             "models": self._models.copy(),
+            "deep_search_enabled": self._deep_search_enabled,
+            "exa_api_key": self._exa_api_key,
+            "firecrawl_api_key": self._firecrawl_api_key,
+            "search_provider": self._search_provider,
+            "deep_search_num_results": self._deep_search_num_results,
         }
 
     def restore_snapshot(self, snapshot: dict[str, object]) -> None:
@@ -165,10 +237,16 @@ class SettingsViewModel(QObject):
         self._api_key = snapshot.get("api_key", "") or ""
         self._default_model = snapshot.get("default_model", DEFAULT_MODEL)
         self._models = list(snapshot.get("models", DEFAULT_MODELS.copy()))
+        self._deep_search_enabled = bool(snapshot.get("deep_search_enabled", False))
+        self._exa_api_key = snapshot.get("exa_api_key", "") or ""
+        self._firecrawl_api_key = snapshot.get("firecrawl_api_key", "") or ""
+        self._search_provider = snapshot.get("search_provider", "exa") or "exa"
+        self._deep_search_num_results = int(snapshot.get("deep_search_num_results", 5))
 
         self.theme_changed.emit(self._theme_mode)
         self.transparency_changed.emit(self._transparency)
         self.keep_above_changed.emit(self._keep_above)
+        self.deep_search_toggled.emit(self._deep_search_enabled)
         self.settings_changed.emit()
 
     def load_settings(self) -> None:
@@ -192,6 +270,13 @@ class SettingsViewModel(QObject):
                     self._models = [str(item) for item in parsed]
             except json.JSONDecodeError:
                 self._models = DEFAULT_MODELS.copy()
+
+        # Load Deep Search settings
+        self._deep_search_enabled = self._settings_repo.get_bool(self.KEY_DEEP_SEARCH_ENABLED, False)
+        self._exa_api_key = self._settings_repo.get_value(self.KEY_EXA_API_KEY, "")
+        self._firecrawl_api_key = self._settings_repo.get_value(self.KEY_FIRECRAWL_API_KEY, "")
+        self._search_provider = self._settings_repo.get_value(self.KEY_SEARCH_PROVIDER, "exa")
+        self._deep_search_num_results = self._settings_repo.get_int(self.KEY_DEEP_SEARCH_NUM_RESULTS, 5)
 
         self._saved_state = self.snapshot()
 
@@ -231,6 +316,32 @@ class SettingsViewModel(QObject):
                 self.KEY_MODEL_LIST,
                 json.dumps(self._models),
                 "models",
+            )
+            # Save Deep Search settings
+            self._settings_repo.set(
+                self.KEY_DEEP_SEARCH_ENABLED,
+                str(self._deep_search_enabled).lower(),
+                "deep_search",
+            )
+            self._settings_repo.set(
+                self.KEY_EXA_API_KEY,
+                self._exa_api_key,
+                "deep_search",
+            )
+            self._settings_repo.set(
+                self.KEY_FIRECRAWL_API_KEY,
+                self._firecrawl_api_key,
+                "deep_search",
+            )
+            self._settings_repo.set(
+                self.KEY_SEARCH_PROVIDER,
+                self._search_provider,
+                "deep_search",
+            )
+            self._settings_repo.set(
+                self.KEY_DEEP_SEARCH_NUM_RESULTS,
+                str(self._deep_search_num_results),
+                "deep_search",
             )
         except Exception as exc:
             self.error_occurred.emit(str(exc))

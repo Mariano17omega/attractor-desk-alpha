@@ -209,6 +209,7 @@ class ChatPanel(QFrame):
 
     sidebar_toggle_requested = Signal()
     memory_panel_requested = Signal()
+    deep_search_toggle_requested = Signal()
 
     def __init__(
         self,
@@ -344,12 +345,22 @@ class ChatPanel(QFrame):
         input_row_layout.setContentsMargins(0, 0, 0, 0)
         input_row_layout.setSpacing(12)
 
+        # Deep Search toggle button - toggles internet access for the agent
+        self._deep_search_btn = QPushButton("🌐")
+        self._deep_search_btn.setFixedSize(32, 32)
+        self._deep_search_btn.setToolTip("Toggle Deep Search (internet access)")
+        self._deep_search_btn.setCheckable(True)
+        self._deep_search_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._update_deep_search_style(False)
+        input_row_layout.addWidget(self._deep_search_btn)
+
         self._add_btn = QPushButton("+")
         self._add_btn.setObjectName("iconButton")
         self._add_btn.setToolTip("Import PDF as artifact")
         self._add_btn.setFixedSize(32, 32)
         self._add_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         input_row_layout.addWidget(self._add_btn)
+
 
         self._message_input = MessageInput()
         self._message_input.setSizePolicy(
@@ -402,8 +413,10 @@ class ChatPanel(QFrame):
         self._send_btn.clicked.connect(self._send_message)
         self._cancel_btn.clicked.connect(self.viewmodel.cancel_generation)
         self._add_btn.clicked.connect(self._on_add_clicked)
+        self._deep_search_btn.clicked.connect(self._on_deep_search_toggled)
         self.viewmodel.pdf_import_status.connect(self._on_pdf_status)
         self.view_model_signals()
+
 
     def view_model_signals(self) -> None:
         self.viewmodel.message_added.connect(self._on_message_added)
@@ -473,3 +486,49 @@ class ChatPanel(QFrame):
         """Display PDF import status in the chat."""
         if status:
             self.viewmodel.status_changed.emit(status)
+
+    def set_deep_search_enabled(self, enabled: bool) -> None:
+        """Update the Deep Search button state based on enabled setting."""
+        self._deep_search_btn.setChecked(enabled)
+        self._update_deep_search_style(enabled)
+
+    def _update_deep_search_style(self, enabled: bool) -> None:
+        """Update the Deep Search button style based on state."""
+        if enabled:
+            self._deep_search_btn.setStyleSheet(
+                """
+                QPushButton {
+                    background-color: rgba(0, 194, 255, 0.3);
+                    border: 1px solid #00C2FF;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: rgba(0, 194, 255, 0.4);
+                }
+                """
+            )
+            self._deep_search_btn.setToolTip("Deep Search enabled (click to disable)")
+        else:
+            self._deep_search_btn.setStyleSheet(
+                """
+                QPushButton {
+                    background-color: rgba(108, 112, 134, 0.2);
+                    border: 1px solid transparent;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: rgba(108, 112, 134, 0.3);
+                    border: 1px solid #6c7086;
+                }
+                """
+            )
+            self._deep_search_btn.setToolTip("Deep Search disabled (click to enable)")
+
+    def _on_deep_search_toggled(self, checked: bool) -> None:
+        """Handle Deep Search button toggle."""
+        self._update_deep_search_style(checked)
+        self.deep_search_toggle_requested.emit()

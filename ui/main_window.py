@@ -99,6 +99,7 @@ class MainWindow(QMainWindow):
 
         self._chat_panel.sidebar_toggle_requested.connect(self._toggle_sidebar)
         self._chat_panel.memory_panel_requested.connect(self._toggle_artifact_panel)
+        self._chat_panel.deep_search_toggle_requested.connect(self._toggle_deep_search)
 
         self._chat_viewmodel.status_changed.connect(self._update_status)
         self._chat_viewmodel.error_occurred.connect(self._update_error)
@@ -107,11 +108,17 @@ class MainWindow(QMainWindow):
         self._settings_viewmodel.theme_changed.connect(self._apply_theme)
         self._settings_viewmodel.transparency_changed.connect(self._apply_transparency)
         self._settings_viewmodel.keep_above_changed.connect(self._apply_keep_above)
+        self._settings_viewmodel.deep_search_toggled.connect(
+            self._chat_panel.set_deep_search_enabled
+        )
 
     def _apply_settings(self) -> None:
         self._apply_theme(self._settings_viewmodel.theme_mode)
         self._apply_transparency(self._settings_viewmodel.transparency)
         self._apply_keep_above(self._settings_viewmodel.keep_above)
+        self._chat_panel.set_deep_search_enabled(
+            self._settings_viewmodel.deep_search_enabled
+        )
 
     def _apply_theme(self, mode: ThemeMode) -> None:
         app = QApplication.instance()
@@ -147,6 +154,11 @@ class MainWindow(QMainWindow):
             self._artifact_panel.setVisible(False)
         else:
             self._sidebar.setVisible(True)
+
+    def _toggle_deep_search(self) -> None:
+        current = self._settings_viewmodel.deep_search_enabled
+        self._settings_viewmodel.deep_search_enabled = not current
+        self._settings_viewmodel.save_settings()
 
     def _update_status(self, message: str) -> None:
         self._sidebar.set_status(message)

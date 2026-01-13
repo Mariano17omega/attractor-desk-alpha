@@ -60,3 +60,18 @@ def test_settings_viewmodel_persistence(tmp_path: Path) -> None:
     assert reloaded.keep_above is True
     assert reloaded.api_key == "test-key"
     assert reloaded.default_model == "openai/gpt-4o"
+
+
+def test_settings_viewmodel_deep_search_persistence(tmp_path: Path) -> None:
+    db = Database(tmp_path / "settings.db")
+    settings_vm = SettingsViewModel(settings_db=db)
+    settings_vm.deep_search_enabled = True
+    settings_vm.exa_api_key = "exa-test-key-123"
+    settings_vm.deep_search_num_results = 10
+    settings_vm.save_settings()
+
+    reloaded = SettingsViewModel(settings_db=db)
+    assert reloaded.deep_search_enabled is True
+    assert reloaded.exa_api_key == "exa-test-key-123"
+    assert reloaded.deep_search_num_results == 10
+

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from core.models import ThemeMode
 from ui.viewmodels.settings_viewmodel import SettingsViewModel
+from ui.widgets.configuration.deep_search_page import DeepSearchPage
 from ui.widgets.configuration.models_page import ModelsPage
 from ui.widgets.configuration.placeholder_page import PlaceholderPage
 from ui.widgets.configuration.theme_page import ThemePage
@@ -35,11 +36,12 @@ class ConfigurationDialog(QDialog):
 
     CATEGORIES = [
         ("Models", 0, "model_settings.svg"),
-        ("Deep Research", 1, "deep_research_settings.svg"),
-        ("RAG", 2, "rag_settings.svg"),
-        ("Memory", 3, "agent_settings.svg"),
-        ("Shortcuts", 4, "shortcuts_settings.svg"),
-        ("Theme", 5, "thema_settings.svg"),
+        ("Deep Search", 1, "deep_research_settings.svg"),
+        ("Deep Research", 2, "deep_research_settings.svg"),
+        ("RAG", 3, "rag_settings.svg"),
+        ("Memory", 4, "agent_settings.svg"),
+        ("Shortcuts", 5, "shortcuts_settings.svg"),
+        ("Theme", 6, "thema_settings.svg"),
     ]
 
     def __init__(
@@ -87,6 +89,7 @@ class ConfigurationDialog(QDialog):
         self._stack.setObjectName("configContent")
 
         self._models_page = ModelsPage(self._viewmodel)
+        self._deep_search_page = DeepSearchPage(self._viewmodel)
         self._deep_research_page = PlaceholderPage(
             "Deep Research Settings",
             "Deep Research configuration coming soon.",
@@ -129,11 +132,13 @@ class ConfigurationDialog(QDialog):
         self._theme_page = ThemePage(self._viewmodel)
 
         self._stack.addWidget(self._wrap_in_scroll_area(self._models_page))
+        self._stack.addWidget(self._wrap_in_scroll_area(self._deep_search_page))
         self._stack.addWidget(self._wrap_in_scroll_area(self._deep_research_page))
         self._stack.addWidget(self._wrap_in_scroll_area(self._rag_page))
         self._stack.addWidget(self._wrap_in_scroll_area(self._memory_page))
         self._stack.addWidget(self._wrap_in_scroll_area(self._shortcuts_page))
         self._stack.addWidget(self._wrap_in_scroll_area(self._theme_page))
+
 
         content_layout.addWidget(self._stack)
 

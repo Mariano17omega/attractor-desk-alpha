@@ -41,6 +41,9 @@ search = [
     "exa-py>=1.0.0",
     "firecrawl-py>=0.0.1",
 ]
+pdf = [
+    "docling>=2.0.0",
+]
 
 [project.scripts]
 attractor-desk = "ui.main:main"

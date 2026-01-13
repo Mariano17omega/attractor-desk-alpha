@@ -51,6 +51,7 @@ class MainWindow(QMainWindow):
         self._main_viewmodel = MainViewModel(
             chat_viewmodel=self._chat_viewmodel,
             workspace_viewmodel=self._workspace_viewmodel,
+            artifact_repository=self._artifact_repository,
         )
 
         self._setup_ui()
@@ -161,3 +162,8 @@ class MainWindow(QMainWindow):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._chat_panel.focus_input()
+
+    def closeEvent(self, event) -> None:
+        """Export artifacts on app close."""
+        self._main_viewmodel.export_current_session()
+        super().closeEvent(event)

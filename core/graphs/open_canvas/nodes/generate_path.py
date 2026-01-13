@@ -131,18 +131,32 @@ async def _dynamic_determine_path(
     if not isinstance(last_msg_content, str):
         last_msg_content = str(last_msg_content)
 
-    result = await model_with_output.ainvoke([
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": f"The user passed the following message:\n<user-message>\n{last_msg_content}\n</user-message>\n\nBased on the entire conversation history, where should this be routed?"}
-    ])
+    try:
+        result = await model_with_output.ainvoke([
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": f"The user passed the following message:\n<user-message>\n{last_msg_content}\n</user-message>\n\nBased on the entire conversation history, where should this be routed?"}
+        ])
+    except Exception as e:
+        # Handle any errors during LLM invocation (including JSON parse errors)
+        import logging
+        logging.warning(f"Error during route determination: {e}. Defaulting to {artifact_route if has_artifact else 'replyToGeneralInput'}")
+        route = artifact_route if has_artifact else "replyToGeneralInput"
+        return {"next": route}
     
     # Parse the output
     if isinstance(result, BaseMessage) and hasattr(result, "tool_calls") and result.tool_calls:
         # Extract args from the first tool call
         args = result.tool_calls[0]["args"]
-        # Validate with Pydantic model
-        decision = RouteDecision(**args)
-        route = decision.route
+        if not args or "route" not in args:
+            # Empty args (from JSON parse failure) - use sensible default
+            route = artifact_route if has_artifact else "replyToGeneralInput"
+        else:
+            # Validate with Pydantic model
+            try:
+                decision = RouteDecision(**args)
+                route = decision.route
+            except Exception:
+                route = artifact_route if has_artifact else "replyToGeneralInput"
     elif hasattr(result, "route"):
         # Handle case where with_structured_output works as expected (future proofing)
         route = result.route
@@ -158,3 +172,4 @@ async def _dynamic_determine_path(
     # print(f"[DEBUG] route: {route}")
     
     return {"next": route}
+

@@ -9,6 +9,7 @@ from PySide6.QtCore import Signal, Qt, QEvent
 from PySide6.QtGui import QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -345,7 +346,7 @@ class ChatPanel(QFrame):
 
         self._add_btn = QPushButton("+")
         self._add_btn.setObjectName("iconButton")
-        self._add_btn.setToolTip("Add attachment")
+        self._add_btn.setToolTip("Import PDF as artifact")
         self._add_btn.setFixedSize(32, 32)
         self._add_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         input_row_layout.addWidget(self._add_btn)
@@ -400,6 +401,8 @@ class ChatPanel(QFrame):
         self._message_input.send_requested.connect(self._send_message)
         self._send_btn.clicked.connect(self._send_message)
         self._cancel_btn.clicked.connect(self.viewmodel.cancel_generation)
+        self._add_btn.clicked.connect(self._on_add_clicked)
+        self.viewmodel.pdf_import_status.connect(self._on_pdf_status)
         self.view_model_signals()
 
     def view_model_signals(self) -> None:
@@ -454,3 +457,19 @@ class ChatPanel(QFrame):
 
     def focus_input(self) -> None:
         self._message_input.setFocus()
+
+    def _on_add_clicked(self) -> None:
+        """Open PDF file dialog and import selected file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select PDF to Import",
+            "",
+            "PDF Files (*.pdf)",
+        )
+        if file_path:
+            self.viewmodel.import_pdf(file_path)
+
+    def _on_pdf_status(self, status: str) -> None:
+        """Display PDF import status in the chat."""
+        if status:
+            self.viewmodel.status_changed.emit(status)

@@ -120,6 +120,81 @@ class ArtifactV3(BaseModel):
         populate_by_name = True
 
 
+# ----- Artifact Collection (Multi-Artifact) -----
+
+class ArtifactExportMeta(BaseModel):
+    """Per-artifact export metadata to keep file paths stable."""
+    export_filename: Optional[str] = Field(
+        default=None,
+        alias="exportFilename",
+        description="Stable export filename; None until first export."
+    )
+    source_pdf: Optional[str] = Field(
+        default=None,
+        alias="sourcePdf",
+        description="Original PDF base filename for PDF ingestions."
+    )
+
+    class Config:
+        populate_by_name = True
+
+
+class ArtifactEntry(BaseModel):
+    """Single artifact within a collection, wrapping ArtifactV3 with export metadata."""
+    id: str = Field(description="Unique identifier for this artifact within the collection.")
+    artifact: ArtifactV3 = Field(description="The artifact with its version history.")
+    export_meta: ArtifactExportMeta = Field(
+        default_factory=ArtifactExportMeta,
+        alias="exportMeta"
+    )
+
+    class Config:
+        populate_by_name = True
+
+
+class ArtifactCollectionV1(BaseModel):
+    """Collection of artifacts for a session with active selection."""
+    version: Literal[1] = Field(default=1, description="Schema version for migration.")
+    artifacts: list[ArtifactEntry] = Field(
+        default_factory=list,
+        description="Ordered list of artifacts in this collection."
+    )
+    active_artifact_id: Optional[str] = Field(
+        default=None,
+        alias="activeArtifactId",
+        description="ID of the currently active/selected artifact."
+    )
+
+    class Config:
+        populate_by_name = True
+
+    def get_active_artifact(self) -> Optional[ArtifactV3]:
+        """Return the active artifact or None if no active selection."""
+        if self.active_artifact_id is None:
+            return None
+        for entry in self.artifacts:
+            if entry.id == self.active_artifact_id:
+                return entry.artifact
+        return None
+
+    def get_active_entry(self) -> Optional[ArtifactEntry]:
+        """Return the active artifact entry or None if no active selection."""
+        if self.active_artifact_id is None:
+            return None
+        for entry in self.artifacts:
+            if entry.id == self.active_artifact_id:
+                return entry
+        return None
+
+    def set_active_artifact(self, artifact_id: str) -> bool:
+        """Set the active artifact by ID. Returns True if found."""
+        for entry in self.artifacts:
+            if entry.id == artifact_id:
+                self.active_artifact_id = artifact_id
+                return True
+        return False
+
+
 # ----- Reflections (Memory) -----
 
 class Reflections(BaseModel):

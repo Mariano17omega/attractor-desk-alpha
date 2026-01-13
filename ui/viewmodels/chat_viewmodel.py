@@ -12,7 +12,15 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from core.graphs.open_canvas import graph
 from core.models import Message, MessageRole, Session
 from core.persistence import ArtifactRepository, MessageRepository, SessionRepository
-from core.types import ArtifactV3
+from core.services.docling_service import DoclingService, PdfConversionResult
+from core.types import (
+    ArtifactCollectionV1,
+    ArtifactEntry,
+    ArtifactExportMeta,
+    ArtifactCodeV3,
+    ArtifactMarkdownV3,
+    ArtifactV3,
+)
 from ui.viewmodels.settings_viewmodel import SettingsViewModel
 
 
@@ -53,6 +61,7 @@ class ChatViewModel(QObject):
     status_changed = Signal(str)
     error_occurred = Signal(str)
     session_updated = Signal()
+    pdf_import_status = Signal(str)  # Emits status updates for PDF import
 
     def __init__(
         self,
@@ -76,6 +85,10 @@ class ChatViewModel(QObject):
 
         self._worker: Optional[GraphWorker] = None
         self._cancelled = False
+
+        # PDF import service
+        self._docling_service = DoclingService(self)
+        self._docling_service.conversion_complete.connect(self._on_pdf_conversion_complete)
 
         self._settings: dict = {
             "model": "anthropic/claude-3.5-sonnet",
@@ -295,3 +308,74 @@ class ChatViewModel(QObject):
         self._cancelled = True
         self._set_loading(False)
         self.status_changed.emit("Cancelled")
+
+    # ---- PDF Import Methods ----
+
+    @Slot(str)
+    def import_pdf(self, pdf_path: str) -> None:
+        """Start importing a PDF file as a new text artifact.
+
+        Args:
+            pdf_path: Absolute path to the PDF file.
+        """
+        if not self._current_session:
+            self.error_occurred.emit("No active session for PDF import")
+            return
+        if self._docling_service.is_busy():
+            self.error_occurred.emit("A PDF conversion is already in progress")
+            return
+
+        self.pdf_import_status.emit(f"Converting PDF: {pdf_path}")
+        self._docling_service.convert_pdf(pdf_path)
+
+    def _on_pdf_conversion_complete(self, result: PdfConversionResult) -> None:
+        """Handle completed PDF conversion and create artifact.
+
+        Args:
+            result: Conversion result from DoclingService.
+        """
+        if not result.success:
+            self.error_occurred.emit(result.error_message)
+            self.pdf_import_status.emit("")
+            return
+
+        if not self._current_session:
+            self.error_occurred.emit("No active session")
+            self.pdf_import_status.emit("")
+            return
+
+        # Create a new text artifact from the converted Markdown
+        markdown_content = ArtifactMarkdownV3(
+            index=1,
+            type="text",
+            title=result.source_filename,
+            fullMarkdown=result.markdown,
+        )
+        new_artifact = ArtifactV3(
+            currentIndex=1,
+            contents=[markdown_content],
+        )
+        entry = ArtifactEntry(
+            id=str(uuid4()),
+            artifact=new_artifact,
+            export_meta=ArtifactExportMeta(source_pdf=result.source_filename),
+        )
+
+        # Add to collection or create new collection
+        collection = self._artifact_repository.get_collection(self._current_session.id)
+        if collection is None:
+            collection = ArtifactCollectionV1(
+                version=1,
+                artifacts=[entry],
+                active_artifact_id=entry.id,
+            )
+        else:
+            collection.artifacts.append(entry)
+            collection.active_artifact_id = entry.id
+
+        self._artifact_repository.save_collection(self._current_session.id, collection)
+
+        # Update current artifact reference and emit signal
+        self._artifact = new_artifact
+        self.artifact_changed.emit()
+        self.pdf_import_status.emit(f"Imported: {result.source_filename}")

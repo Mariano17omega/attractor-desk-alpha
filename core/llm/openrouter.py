@@ -160,10 +160,28 @@ class OpenRouterChat(BaseChatModel):
         tool_calls = []
         if "tool_calls" in message and message["tool_calls"]:
             for tc in message["tool_calls"]:
+                try:
+                    args = json.loads(tc["function"]["arguments"])
+                except json.JSONDecodeError as e:
+                    # Handle malformed JSON from LLM - try to salvage what we can
+                    raw_args = tc["function"]["arguments"]
+                    # Log the error for debugging
+                    import logging
+                    logging.warning(
+                        f"Failed to parse tool call arguments as JSON: {e}. "
+                        f"Raw arguments: {raw_args[:200]}..."
+                    )
+                    # Try basic cleanup: fix unescaped newlines and quotes
+                    try:
+                        cleaned = raw_args.replace('\n', '\\n').replace('\r', '\\r')
+                        args = json.loads(cleaned)
+                    except json.JSONDecodeError:
+                        # Last resort: return empty dict - caller should handle gracefully
+                        args = {}
                 tool_calls.append({
                     "id": tc["id"],
                     "name": tc["function"]["name"],
-                    "args": json.loads(tc["function"]["arguments"]),
+                    "args": args,
                 })
         
         ai_message = AIMessage(

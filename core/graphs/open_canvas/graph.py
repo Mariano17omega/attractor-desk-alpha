@@ -339,23 +339,23 @@ async def web_search_node(
 
 
 async def route_post_web_search(state: OpenCanvasState):
-    """Route after web search completes."""
-    has_artifact = state.artifact and len(state.artifact.contents) > 0
+    """Route after web search completes, using the stored intended route."""
+    # Use the stored intended route, or fall back to replyToGeneralInput
+    intended_route = state.post_web_search_route or "replyToGeneralInput"
     
-    if not state.web_search_results:
-        return {
-            "next": "rewriteArtifact" if has_artifact else "generateArtifact",
-            "web_search_enabled": False,
-        }
-    
-    # Web search returned results
-    return {
-        "next": "rewriteArtifact" if has_artifact else "generateArtifact",
+    result = {
+        "next": intended_route,
         "web_search_enabled": False,
-        "internal_messages": [
-            create_ai_message_from_web_results(state.web_search_results)
-        ],
+        "post_web_search_route": None,  # Clear after use
     }
+    
+    # Add web search results as context message if available
+    if state.web_search_results:
+        result["internal_messages"] = [
+            create_ai_message_from_web_results(state.web_search_results)
+        ]
+    
+    return result
 
 
 async def reflect_node(state: OpenCanvasState):
@@ -433,6 +433,12 @@ builder.add_conditional_edges(
     {
         "generateArtifact": "ragRetrieve",
         "rewriteArtifact": "ragRetrieve",
+        "replyToGeneralInput": "ragRetrieve",
+        "updateArtifact": "updateArtifact",
+        "rewriteArtifactTheme": "rewriteArtifactTheme",
+        "rewriteCodeArtifactTheme": "rewriteCodeArtifactTheme",
+        "customAction": "customAction",
+        "updateHighlightedText": "updateHighlightedText",
     },
 )
 

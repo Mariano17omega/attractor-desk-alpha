@@ -139,6 +139,12 @@ class OpenCanvasState(BaseModel):
         default=None,
         alias="webSearchResults"
     )
+    
+    # Post web search routing - stores the intended route to use after web search
+    post_web_search_route: Optional[str] = Field(
+        default=None,
+        alias="postWebSearchRoute"
+    )
 
     # RAG state
     rag_enabled: Optional[bool] = None

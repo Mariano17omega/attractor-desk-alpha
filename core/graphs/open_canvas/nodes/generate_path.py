@@ -50,7 +50,13 @@ async def generate_path(
         return {"next": "customAction"}
     
     if state.web_search_enabled:
-        return {"next": "webSearch"}
+        # Determine intended route first, then store it for post-web-search routing
+        intended_route_result = await _dynamic_determine_path(state, messages, config)
+        intended_route = intended_route_result.get("next", "replyToGeneralInput")
+        return {
+            "next": "webSearch",
+            "post_web_search_route": intended_route,
+        }
     
     # For all other cases, use LLM-based routing with constrained options
     # This matches the TypeScript dynamic-determine-path.ts behavior

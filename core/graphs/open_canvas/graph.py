@@ -416,14 +416,14 @@ builder.add_conditional_edges(
     },
 )
 
-# Artifact generation/modification -> clean state (skip followup for now to fix validation errors)
-builder.add_edge("generateArtifact", "cleanState")
-builder.add_edge("updateArtifact", "cleanState")
-builder.add_edge("updateHighlightedText", "cleanState")
-builder.add_edge("rewriteArtifact", "cleanState")
-builder.add_edge("rewriteArtifactTheme", "cleanState")
-builder.add_edge("rewriteCodeArtifactTheme", "cleanState")
-builder.add_edge("customAction", "cleanState")
+# Artifact generation/modification -> generateFollowup (for follow-up messages)
+builder.add_edge("generateArtifact", "generateFollowup")
+builder.add_edge("updateArtifact", "generateFollowup")
+builder.add_edge("updateHighlightedText", "generateFollowup")
+builder.add_edge("rewriteArtifact", "generateFollowup")
+builder.add_edge("rewriteArtifactTheme", "generateFollowup")
+builder.add_edge("rewriteCodeArtifactTheme", "generateFollowup")
+builder.add_edge("customAction", "generateFollowup")
 
 # Web search flow
 builder.add_edge("webSearch", "routePostWebSearch")

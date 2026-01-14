@@ -115,6 +115,8 @@ class SettingsViewModel(QObject):
     KEY_RAG_ENABLE_LLM_RERANK = "rag.enable_llm_rerank"
     KEY_RAG_INDEX_TEXT = "rag.index_text_artifacts"
     KEY_SHORTCUT_BINDINGS = "shortcuts.bindings"
+    KEY_SIDEBAR_VISIBLE = "ui.sidebar_visible"
+    KEY_ARTIFACT_PANEL_VISIBLE = "ui.artifact_panel_visible"
 
     def __init__(
         self,
@@ -150,6 +152,8 @@ class SettingsViewModel(QObject):
         self._rag_enable_llm_rerank: bool = False
         self._rag_index_text_artifacts: bool = False
         self._shortcut_bindings: dict[str, str] = DEFAULT_SHORTCUT_BINDINGS.copy()
+        self._sidebar_visible: bool = True
+        self._artifact_panel_visible: bool = False
 
         self._saved_state: dict[str, object] = {}
         self.load_settings()
@@ -451,6 +455,28 @@ class SettingsViewModel(QObject):
         self.shortcuts_changed.emit()
         self.settings_changed.emit()
 
+    @property
+    def sidebar_visible(self) -> bool:
+        return self._sidebar_visible
+
+    @sidebar_visible.setter
+    def sidebar_visible(self, value: bool) -> None:
+        value = bool(value)
+        if self._sidebar_visible != value:
+            self._sidebar_visible = value
+            self.settings_changed.emit()
+
+    @property
+    def artifact_panel_visible(self) -> bool:
+        return self._artifact_panel_visible
+
+    @artifact_panel_visible.setter
+    def artifact_panel_visible(self, value: bool) -> None:
+        value = bool(value)
+        if self._artifact_panel_visible != value:
+            self._artifact_panel_visible = value
+            self.settings_changed.emit()
+
     def _normalize_shortcut_bindings(
         self, bindings: dict[str, object]
     ) -> dict[str, str]:
@@ -616,6 +642,12 @@ class SettingsViewModel(QObject):
         else:
             self._shortcut_bindings = DEFAULT_SHORTCUT_BINDINGS.copy()
 
+        # Load UI visibility settings
+        self._sidebar_visible = self._settings_repo.get_bool(self.KEY_SIDEBAR_VISIBLE, True)
+        self._artifact_panel_visible = self._settings_repo.get_bool(
+            self.KEY_ARTIFACT_PANEL_VISIBLE, False
+        )
+
         self._saved_state = self.snapshot()
 
     def save_settings(self) -> None:
@@ -746,6 +778,17 @@ class SettingsViewModel(QObject):
                 self.KEY_SHORTCUT_BINDINGS,
                 json.dumps(self._shortcut_bindings),
                 "shortcuts",
+            )
+            # Save UI visibility settings
+            self._settings_repo.set(
+                self.KEY_SIDEBAR_VISIBLE,
+                str(self._sidebar_visible).lower(),
+                "ui",
+            )
+            self._settings_repo.set(
+                self.KEY_ARTIFACT_PANEL_VISIBLE,
+                str(self._artifact_panel_visible).lower(),
+                "ui",
             )
         except Exception as exc:
             self.error_occurred.emit(str(exc))

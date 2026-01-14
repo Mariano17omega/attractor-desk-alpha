@@ -97,11 +97,14 @@ class Sidebar(QFrame):
         self,
         viewmodel: WorkspaceViewModel,
         parent: Optional[QWidget] = None,
+        check_pending_callback: Optional[callable] = None,
     ):
         super().__init__(parent)
         self.viewmodel = viewmodel
+        self._check_pending_callback = check_pending_callback
         self.setObjectName("sidebar")
-        self.setFixedWidth(300)
+        self.setMinimumWidth(180)  # Reduced to prevent layout conflicts
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._setup_ui()
         self._connect_signals()
         self._refresh()
@@ -483,6 +486,9 @@ class Sidebar(QFrame):
             self.viewmodel.delete_workspace(current.id)
 
     def _on_new_session(self) -> None:
+        # Check for pending edits before creating new session
+        if self._check_pending_callback and not self._check_pending_callback():
+            return
         self.new_session_requested.emit()
 
     def _on_session_list_changed(
@@ -494,6 +500,14 @@ class Sidebar(QFrame):
             return
         session_id = current.data(Qt.ItemDataRole.UserRole)
         if session_id:
+            # Check for pending edits before switching sessions
+            if self._check_pending_callback and not self._check_pending_callback():
+                # Restore previous selection
+                if _previous:
+                    self._session_list.blockSignals(True)
+                    self._session_list.setCurrentItem(_previous)
+                    self._session_list.blockSignals(False)
+                return
             self.viewmodel.select_session(session_id)
             self.session_selected.emit(session_id)
         self._sync_session_item_selection()

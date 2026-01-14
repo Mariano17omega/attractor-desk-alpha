@@ -144,6 +144,13 @@ async def rewrite_artifact(
         new_type = args.get("type", artifact_type)
         new_title = args.get("title") or current_content.title
         new_lang = args.get("language", "other")
+
+    # Clean up any XML tags the LLM might have included from the prompt
+    import re
+    # Remove <artifact> and </artifact> tags
+    new_content_text = re.sub(r'</?artifact>', '', new_content_text)
+    # Strip leading/trailing whitespace that might result
+    new_content_text = new_content_text.strip()
     
     # Create new artifact content
     new_index = len(state.artifact.contents) + 1

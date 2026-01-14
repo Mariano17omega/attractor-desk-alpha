@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QTabBar,
     QStackedWidget,
     QSizePolicy,
+    QMessageBox,
+    QLineEdit,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -50,11 +52,18 @@ class CodeEditor(QPlainTextEdit):
 
 
 class MarkdownViewer(QTextEdit):
-    """Markdown viewer (read-only)."""
+    """Markdown viewer with double-click to edit support."""
+
+    doubleClicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
+
+    def mouseDoubleClickEvent(self, event):
+        """Emit doubleClicked signal on double-click."""
+        self.doubleClicked.emit()
+        super().mouseDoubleClickEvent(event)
 
 
 class ArtifactPanel(QWidget):
@@ -76,6 +85,9 @@ class ArtifactPanel(QWidget):
         self._collection: Optional[ArtifactCollectionV1] = None
         self._text_count = 0
         self._code_count = 0
+        self._is_editing = False
+        self._original_content = ""  # For cancel/revert
+        self._is_renaming = False  # For title rename mode
 
         self._setup_ui()
         self._setup_connections()
@@ -87,30 +99,99 @@ class ArtifactPanel(QWidget):
         layout.setSpacing(12)
 
         self.setObjectName("artifactPanel")
+        self.setMinimumWidth(200)
+        self.setMaximumWidth(1000)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
         # Header area
         header_layout = QHBoxLayout()
 
+        # Title display (clickable for rename)
+        self.title_widget = QWidget()
+        title_layout = QHBoxLayout(self.title_widget)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(8)
+
         self.title_label = QLabel("Artifact")
         self.title_label.setStyleSheet("font-size: 20px; font-weight: 600;")
-        header_layout.addWidget(self.title_label)
+        self.title_label.setCursor(Qt.PointingHandCursor)
+        self.title_label.setToolTip("Double-click to rename")
+        title_layout.addWidget(self.title_label)
 
+        # Title edit (hidden by default)
+        self.title_edit = QLineEdit()
+        self.title_edit.setStyleSheet("font-size: 18px; font-weight: 600; padding: 2px 6px;")
+        self.title_edit.setMaximumWidth(300)
+        self.title_edit.hide()
+        title_layout.addWidget(self.title_edit)
+
+        # Title save button (hidden by default)
+        self.title_save_button = QPushButton("✓")
+        self.title_save_button.setFixedSize(28, 28)
+        self.title_save_button.setStyleSheet(
+            "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; "
+            "border-radius: 4px; }"
+            "QPushButton:hover { background-color: #45a049; }"
+        )
+        self.title_save_button.setToolTip("Save name")
+        self.title_save_button.hide()
+        title_layout.addWidget(self.title_save_button)
+
+        header_layout.addWidget(self.title_widget)
         header_layout.addStretch()
 
-        # Version navigation
+
+        # Delete artifact button (matches delete session button style)
+        self.delete_button = QPushButton("-")
+        self.delete_button.setObjectName("iconButton")
+        self.delete_button.setToolTip("Delete artifact")
+        self.delete_button.setFixedSize(32, 32)
+        self.delete_button.setStyleSheet("font-size: 18px; font-weight: 700; padding: 0px;")
+        header_layout.addWidget(self.delete_button)
+
+        # Version navigation (shown in view mode)
+        self.nav_widget = QWidget()
+        nav_layout = QHBoxLayout(self.nav_widget)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setSpacing(4)
+
         self.prev_button = QPushButton("◀")
         self.prev_button.setMaximumWidth(40)
         self.prev_button.setEnabled(False)
-        header_layout.addWidget(self.prev_button)
+        nav_layout.addWidget(self.prev_button)
 
         self.version_label = QLabel("v0/0")
         self.version_label.setStyleSheet("padding: 0 12px; font-size: 13px;")
-        header_layout.addWidget(self.version_label)
+        nav_layout.addWidget(self.version_label)
 
         self.next_button = QPushButton("▶")
         self.next_button.setMaximumWidth(40)
         self.next_button.setEnabled(False)
-        header_layout.addWidget(self.next_button)
+        nav_layout.addWidget(self.next_button)
+
+        header_layout.addWidget(self.nav_widget)
+
+        # Edit mode buttons (hidden by default)
+        self.edit_buttons_widget = QWidget()
+        edit_buttons_layout = QHBoxLayout(self.edit_buttons_widget)
+        edit_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        edit_buttons_layout.setSpacing(8)
+
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setObjectName("cancelButton")
+        edit_buttons_layout.addWidget(self.cancel_button)
+
+        self.save_button = QPushButton("Save")
+        self.save_button.setObjectName("saveButton")
+        self.save_button.setStyleSheet(
+            "QPushButton { background-color: #4CAF50; color: white; font-weight: 600; "
+            "padding: 6px 16px; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #45a049; }"
+        )
+        edit_buttons_layout.addWidget(self.save_button)
+
+        header_layout.addWidget(self.edit_buttons_widget)
+        self.edit_buttons_widget.hide()
 
         layout.addLayout(header_layout)
 
@@ -134,18 +215,30 @@ class ArtifactPanel(QWidget):
 
         self.content_stack = QStackedWidget()
 
-        # Text viewer
+        # Text viewer (index 0)
         self.markdown_viewer = MarkdownViewer()
         self.content_stack.addWidget(self.markdown_viewer)
 
-        # Code editor
+        # Code editor (index 1)
         self.code_editor = CodeEditor()
         self.content_stack.addWidget(self.code_editor)
+
+        # Raw text editor for edit mode (index 2)
+        self.raw_text_editor = QPlainTextEdit()
+        self.raw_text_editor.setObjectName("rawTextEditor")
+        font = QFont("JetBrains Mono", 12)
+        font.setStyleHint(QFont.Monospace)
+        self.raw_text_editor.setFont(font)
+        self.content_stack.addWidget(self.raw_text_editor)
 
         content_layout.addWidget(self.content_stack)
         layout.addWidget(self.content_frame, stretch=1)
 
-        # Placeholder
+        # Placeholder with create button
+        self.placeholder_widget = QWidget()
+        placeholder_layout = QVBoxLayout(self.placeholder_widget)
+        placeholder_layout.setAlignment(Qt.AlignCenter)
+
         self.placeholder = QLabel(
             "💡 Ask me to create something!\n\n"
             "Try: \"Write a poem about Python\"\n"
@@ -153,8 +246,28 @@ class ArtifactPanel(QWidget):
         )
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.placeholder.setWordWrap(True)
-        self.placeholder.setStyleSheet("font-size: 15px; padding: 60px 40px;")
-        layout.addWidget(self.placeholder)
+        self.placeholder.setStyleSheet("font-size: 15px; padding: 20px 40px;")
+        placeholder_layout.addWidget(self.placeholder)
+
+        # Create artifact buttons
+        create_buttons_layout = QHBoxLayout()
+        create_buttons_layout.setAlignment(Qt.AlignCenter)
+        create_buttons_layout.setSpacing(12)
+
+        self.create_text_button = QPushButton("📝 New Text")
+        self.create_text_button.setStyleSheet(
+            "QPushButton { padding: 10px 20px; font-size: 14px; border-radius: 6px; }"
+        )
+        create_buttons_layout.addWidget(self.create_text_button)
+
+        self.create_code_button = QPushButton("💻 New Code")
+        self.create_code_button.setStyleSheet(
+            "QPushButton { padding: 10px 20px; font-size: 14px; border-radius: 6px; }"
+        )
+        create_buttons_layout.addWidget(self.create_code_button)
+
+        placeholder_layout.addLayout(create_buttons_layout)
+        layout.addWidget(self.placeholder_widget)
 
         self._show_placeholder()
 
@@ -164,22 +277,45 @@ class ArtifactPanel(QWidget):
         self.next_button.clicked.connect(self._on_next_version)
         self.tab_bar.currentChanged.connect(self._on_tab_changed)
 
+        # Edit mode connections
+        self.markdown_viewer.doubleClicked.connect(self._start_edit_mode)
+        self.save_button.clicked.connect(self._save_edit_mode)
+        self.cancel_button.clicked.connect(self._cancel_edit_mode)
+
+        # Create artifact buttons
+        self.create_text_button.clicked.connect(lambda: self._create_new_artifact(is_code=False))
+        self.create_code_button.clicked.connect(lambda: self._create_new_artifact(is_code=True))
+
+        # Title rename connections
+        self.title_label.installEventFilter(self)
+        self.title_save_button.clicked.connect(self._save_title)
+        self.title_edit.returnPressed.connect(self._save_title)
+
+        # Delete artifact connection
+        self.delete_button.clicked.connect(self._delete_artifact)
+
         # Connect to view model
         self.view_model.artifact_changed.connect(self._on_artifact_changed)
 
     def _show_placeholder(self):
         """Show the empty state placeholder."""
+        # Reset edit mode if active
+        if self._is_editing:
+            self._force_exit_edit_mode()
+
         self.content_frame.hide()
         self.tab_bar.hide()
-        self.placeholder.show()
+        self.placeholder_widget.show()
         self.type_label.setText("No artifact generated yet")
         self.version_label.setText("v0/0")
         self.prev_button.setEnabled(False)
         self.next_button.setEnabled(False)
+        self.nav_widget.show()
+        self.edit_buttons_widget.hide()
 
     def _show_content(self):
         """Show the content area."""
-        self.placeholder.hide()
+        self.placeholder_widget.hide()
         self.tab_bar.show()
         self.content_frame.show()
 
@@ -375,3 +511,229 @@ class ArtifactPanel(QWidget):
             self.type_label.setText("📝 Text Document")
             self.markdown_viewer.setMarkdown(current_content.full_markdown)
             self.content_stack.setCurrentIndex(0)  # Show text view
+
+    def _start_edit_mode(self):
+        """Enter edit mode for the current text artifact."""
+        if self._is_editing:
+            return
+
+        # Only support text artifacts for now
+        artifact = self.view_model.current_artifact
+        if not artifact or not artifact.contents:
+            return
+
+        current_content = None
+        for content in artifact.contents:
+            if content.index == artifact.current_index:
+                current_content = content
+                break
+
+        if not current_content:
+            current_content = artifact.contents[-1]
+
+        # Only edit text artifacts (not code - code editor already editable)
+        if current_content.type != "text":
+            return
+
+        self._is_editing = True
+        self._original_content = current_content.full_markdown
+
+        # Switch to raw text editor with markdown content
+        self.raw_text_editor.setPlainText(current_content.full_markdown)
+        self.content_stack.setCurrentIndex(2)  # Show raw text editor
+
+        # Update UI: hide nav, show edit buttons
+        self.nav_widget.hide()
+        self.edit_buttons_widget.show()
+        self.tab_bar.setEnabled(False)
+        self.type_label.setText("✏️ Editing...")
+
+    def _save_edit_mode(self):
+        """Save changes and exit edit mode."""
+        if not self._is_editing:
+            return
+
+        new_content = self.raw_text_editor.toPlainText()
+
+        # Update the artifact in the COLLECTION (not view_model which is a separate reference)
+        session_id = self.view_model.current_session_id
+        if session_id and self._collection:
+            # Get the active entry from the collection
+            active_entry = self._collection.get_active_entry()
+            if active_entry and active_entry.artifact.contents:
+                artifact = active_entry.artifact
+                for content in artifact.contents:
+                    if content.index == artifact.current_index and content.type == "text":
+                        content.full_markdown = new_content
+                        break
+
+                # Also sync to view_model so UI stays consistent
+                self.view_model._artifact = artifact
+
+            # Persist to repository
+            self.view_model._artifact_repository.save_collection(
+                session_id, self._collection
+            )
+
+        self._exit_edit_mode()
+
+        # Refresh display with saved content
+        self.markdown_viewer.setMarkdown(new_content)
+
+    def _cancel_edit_mode(self):
+        """Discard changes and exit edit mode."""
+        if not self._is_editing:
+            return
+
+        self._exit_edit_mode()
+
+        # Restore original rendered markdown
+        self.markdown_viewer.setMarkdown(self._original_content)
+
+    def _exit_edit_mode(self):
+        """Common logic to exit edit mode (used by save and cancel)."""
+        self._is_editing = False
+        self._original_content = ""
+
+        # Switch back to markdown viewer
+        self.content_stack.setCurrentIndex(0)
+
+        # Update UI: show nav, hide edit buttons
+        self.nav_widget.show()
+        self.edit_buttons_widget.hide()
+        self.tab_bar.setEnabled(True)
+        self.type_label.setText("📝 Text Document")
+
+    def _force_exit_edit_mode(self):
+        """Force exit edit mode without saving (used when switching sessions)."""
+        self._is_editing = False
+        self._original_content = ""
+        self.content_stack.setCurrentIndex(0)
+        self.nav_widget.show()
+        self.edit_buttons_widget.hide()
+        self.tab_bar.setEnabled(True)
+
+    def check_pending_edits(self) -> bool:
+        """Check for unsaved edits and prompt user.
+        
+        Returns:
+            True if safe to proceed (no edits or user chose to discard)
+            False if user chose to cancel
+        """
+        if not self._is_editing:
+            return True
+
+        reply = QMessageBox.warning(
+            self,
+            "Unsaved Changes",
+            "You have unsaved changes to the artifact.\n\n"
+            "Do you want to discard these changes?",
+            QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Cancel
+        )
+
+        if reply == QMessageBox.Discard:
+            self._force_exit_edit_mode()
+            return True
+        return False
+
+    def eventFilter(self, watched, event):
+        """Handle double-click on title label to enter rename mode."""
+        from PySide6.QtCore import QEvent
+        if watched == self.title_label and event.type() == QEvent.MouseButtonDblClick:
+            self._start_rename_mode()
+            return True
+        return super().eventFilter(watched, event)
+
+    def _start_rename_mode(self):
+        """Enter title rename mode."""
+        if self._is_renaming:
+            return
+
+        self._is_renaming = True
+        current_title = self.title_label.text()
+        self.title_edit.setText(current_title)
+        self.title_label.hide()
+        self.title_edit.show()
+        self.title_save_button.show()
+        self.title_edit.setFocus()
+        self.title_edit.selectAll()
+
+    def _save_title(self):
+        """Save the new title and exit rename mode."""
+        if not self._is_renaming:
+            return
+
+        new_title = self.title_edit.text().strip()
+        if not new_title:
+            new_title = "Untitled"  # Fallback
+
+        # Update artifact title
+        session_id = self.view_model.current_session_id
+        if session_id and self._collection:
+            active_entry = self._collection.get_active_entry()
+            if active_entry and active_entry.artifact.contents:
+                artifact = active_entry.artifact
+                for content in artifact.contents:
+                    if content.index == artifact.current_index:
+                        content.title = new_title
+                        break
+                # Persist changes
+                self.view_model._artifact_repository.save_collection(
+                    session_id, self._collection
+                )
+
+        # Update UI
+        self.title_label.setText(new_title)
+        self._exit_rename_mode()
+
+    def _exit_rename_mode(self):
+        """Exit rename mode."""
+        self._is_renaming = False
+        self.title_edit.hide()
+        self.title_save_button.hide()
+        self.title_label.show()
+
+    def _delete_artifact(self):
+        """Delete the current artifact after confirmation."""
+        if not self._collection or not self._collection.active_artifact_id:
+            return
+
+        active_entry = self._collection.get_active_entry()
+        if not active_entry:
+            return
+
+        # Confirm deletion
+        reply = QMessageBox.warning(
+            self,
+            "Delete Artifact",
+            f"Delete artifact '{active_entry.artifact.contents[-1].title}'?\n\n"
+            "This action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        session_id = self.view_model.current_session_id
+        if not session_id:
+            return
+
+        # Remove artifact from collection
+        artifact_id = self._collection.active_artifact_id
+        self._collection.artifacts = [
+            e for e in self._collection.artifacts if e.id != artifact_id
+        ]
+
+        # Select next artifact or clear
+        if self._collection.artifacts:
+            self._collection.active_artifact_id = self._collection.artifacts[0].id
+            self.view_model._artifact = self._collection.get_active_artifact()
+        else:
+            self._collection.active_artifact_id = None
+            self.view_model._artifact = None
+
+        # Persist and refresh
+        self.view_model._artifact_repository.save_collection(session_id, self._collection)
+        self.view_model.artifact_changed.emit()

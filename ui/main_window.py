@@ -99,23 +99,34 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(1)
-
-        self._sidebar = Sidebar(self._workspace_viewmodel)
-        splitter.addWidget(self._sidebar)
-
-        self._chat_panel = ChatPanel(self._chat_viewmodel)
-        splitter.addWidget(self._chat_panel)
+        splitter.setHandleWidth(4)  # Wider for easier grabbing
+        splitter.setChildrenCollapsible(False)  # Prevent snap-to-collapse
 
         self._artifact_panel = ArtifactPanel(self._chat_viewmodel)
         self._artifact_panel.setVisible(False)
+
+        self._sidebar = Sidebar(
+            self._workspace_viewmodel,
+            check_pending_callback=self._artifact_panel.check_pending_edits,
+        )
+        splitter.addWidget(self._sidebar)
+
+        self._chat_panel = ChatPanel(self._chat_viewmodel)
+        self._chat_panel.setMinimumWidth(300)  # Minimum chat area width
+        splitter.addWidget(self._chat_panel)
+
         splitter.addWidget(self._artifact_panel)
 
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 0)
+        # Stretch factors: sidebar and artifact panel don't stretch, chat panel takes extra space
+        splitter.setStretchFactor(0, 0)  # Sidebar
+        splitter.setStretchFactor(1, 1)  # Chat panel (takes remaining space)
+        splitter.setStretchFactor(2, 0)  # Artifact panel
+
+        # Set initial sizes: sidebar 300, chat flexible, artifact panel 350
+        splitter.setSizes([300, 550, 350])
 
         layout.addWidget(splitter)
+        self._splitter = splitter  # Keep reference for potential size persistence
 
         self._update_status("Ready")
 
@@ -147,6 +158,9 @@ class MainWindow(QMainWindow):
             self._settings_viewmodel.deep_search_enabled
         )
         self._apply_shortcuts()
+        # Restore UI panel visibility
+        self._sidebar.setVisible(self._settings_viewmodel.sidebar_visible)
+        self._artifact_panel.setVisible(self._settings_viewmodel.artifact_panel_visible)
 
     def _setup_shortcuts(self) -> None:
         self._shortcut_handlers = {
@@ -202,14 +216,18 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _toggle_artifact_panel(self) -> None:
-        self._artifact_panel.setVisible(not self._artifact_panel.isVisible())
+        visible = not self._artifact_panel.isVisible()
+        self._artifact_panel.setVisible(visible)
+        # Persist visibility state
+        self._settings_viewmodel.artifact_panel_visible = visible
+        self._settings_viewmodel.save_settings()
 
     def _toggle_sidebar(self) -> None:
-        if self._sidebar.isVisible():
-            self._sidebar.setVisible(False)
-            self._artifact_panel.setVisible(False)
-        else:
-            self._sidebar.setVisible(True)
+        visible = not self._sidebar.isVisible()
+        self._sidebar.setVisible(visible)
+        # Persist visibility state
+        self._settings_viewmodel.sidebar_visible = visible
+        self._settings_viewmodel.save_settings()
 
     def _toggle_deep_search(self) -> None:
         current = self._settings_viewmodel.deep_search_enabled

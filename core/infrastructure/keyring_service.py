@@ -28,7 +28,7 @@ class KeyringService:
         "openrouter": "openrouter_api_key",
         "exa": "exa_api_key",
         "firecrawl": "firecrawl_api_key",
-        "langsmith": "langsmith_api_key",
+        # Note: LangSmith is excluded - it's a dev-only tool that reads from API_KEY.txt/env
     }
     
     # Environment variable names for fallback
@@ -36,7 +36,7 @@ class KeyringService:
         "openrouter": "OPENROUTER_API_KEY",
         "exa": "EXA_API_KEY",
         "firecrawl": "FIRECRAWL_API_KEY",
-        "langsmith": "LANGSMITH_API_KEY",
+        # Note: LangSmith excluded - not stored in keyring
     }
     
     def __init__(self) -> None:
@@ -242,11 +242,11 @@ class KeyringService:
                         value = value[1:-1]
                     
                     # Map file key names to our credential names
+                    # Note: LANGSMITH_API_KEY excluded - dev-only, stays in API_KEY.txt
                     key_mapping = {
                         "OPENROUTER_API_KEY": "openrouter",
                         "EXA_API_KEY": "exa",
                         "FIRECRAWL_API_KEY": "firecrawl",
-                        "LANGSMITH_API_KEY": "langsmith",
                     }
                     
                     credential_name = key_mapping.get(key)

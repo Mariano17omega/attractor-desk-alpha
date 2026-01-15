@@ -184,12 +184,11 @@ def get_api_key(key_name: str) -> Optional[str]:
     """
     keyring = _get_keyring()
     
-    # Map key names to credential names
+    # Map key names to credential names (excludes LangSmith - dev-only)
     key_mapping = {
         "OPENROUTER_API_KEY": "openrouter",
         "EXA_API_KEY": "exa",
         "FIRECRAWL_API_KEY": "firecrawl",
-        "LANGSMITH_API_KEY": "langsmith",
     }
     
     credential_name = key_mapping.get(key_name)
@@ -244,8 +243,27 @@ def get_openrouter_api_key() -> str:
 
 
 def get_langsmith_api_key() -> Optional[str]:
-    """Get the LangSmith API key (optional)."""
-    return get_api_key("LANGSMITH_API_KEY")
+    """
+    Get the LangSmith API key (optional, dev-only).
+    
+    Note: LangSmith is intentionally NOT stored in keyring.
+    It reads from environment variable or API_KEY.txt only.
+    """
+    # Check environment variable first
+    env_value = os.environ.get("LANGSMITH_API_KEY")
+    if env_value:
+        return env_value
+    
+    # Fall back to API_KEY.txt (no deprecation warning for LangSmith)
+    config_path = get_config_path()
+    if config_path.exists():
+        try:
+            file_config = _load_from_file(config_path)
+            return file_config.get("LANGSMITH_API_KEY")
+        except Exception:
+            pass
+    
+    return None
 
 
 def get_exa_api_key() -> Optional[str]:

@@ -110,7 +110,7 @@ class TestKeyringService:
         assert all_creds["openrouter"] == "key1"
         assert all_creds["exa"] == "key2"
         assert all_creds["firecrawl"] is None
-        assert all_creds["langsmith"] is None
+        # Note: langsmith is not in keyring storage (dev-only, uses API_KEY.txt)
     
     def test_has_any_credentials(self, service):
         """Test checking if any credentials exist."""

@@ -308,12 +308,17 @@ class MainWindow(QMainWindow):
             return
 
         model_name = self._settings_viewmodel.default_model
+        image_model_name = self._settings_viewmodel.image_model
         api_key = self._settings_viewmodel.api_key
-        if not self._model_capabilities.supports_images(model_name, api_key):
+
+        model_supports = self._model_capabilities.supports_images(model_name, api_key)
+        image_model_supports = self._model_capabilities.supports_images(image_model_name, api_key)
+
+        if not (model_supports or image_model_supports):
             QMessageBox.warning(
                 self,
                 "Capture Not Attached",
-                "The selected model does not support image inputs. "
+                "Neither the selected model nor the image model support image inputs. "
                 "The capture was saved, but it was not attached.",
             )
             return

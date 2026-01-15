@@ -12,6 +12,8 @@ from core.graphs.open_canvas.nodes.update_artifact import update_artifact
 from core.graphs.open_canvas.nodes.update_highlighted_text import update_highlighted_text
 from core.graphs.open_canvas.nodes.custom_action import custom_action
 
+from core.graphs.open_canvas.nodes.image_processing import image_processing
+
 __all__ = [
     "generate_path",
     "generate_artifact",
@@ -24,4 +26,5 @@ __all__ = [
     "update_artifact",
     "update_highlighted_text",
     "custom_action",
+    "image_processing",
 ]

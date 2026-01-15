@@ -24,6 +24,7 @@ from core.graphs.open_canvas.nodes import (
     update_artifact,
     update_highlighted_text,
     custom_action,
+    image_processing,
 )
 from core.graphs.open_canvas.prompts import (
     WEB_SEARCH_CLASSIFIER_PROMPT,
@@ -385,6 +386,7 @@ builder.add_node("generateTitle", generate_title_node)
 builder.add_node("summarizer", summarizer_node)
 builder.add_node("webSearch", web_search_node)
 builder.add_node("routePostWebSearch", route_post_web_search)
+builder.add_node("imageProcessing", image_processing)
 
 # Add edges
 builder.add_edge(START, "generatePath")
@@ -403,6 +405,7 @@ builder.add_conditional_edges(
         "customAction": "customAction",
         "updateHighlightedText": "updateHighlightedText",
         "webSearch": "webSearch",
+        "imageProcessing": "imageProcessing",
     },
 )
 
@@ -439,11 +442,13 @@ builder.add_conditional_edges(
         "rewriteCodeArtifactTheme": "rewriteCodeArtifactTheme",
         "customAction": "customAction",
         "updateHighlightedText": "updateHighlightedText",
+        "imageProcessing": "imageProcessing",
     },
 )
 
 # Reply to general input -> clean state
 builder.add_edge("replyToGeneralInput", "cleanState")
+builder.add_edge("imageProcessing", "cleanState")
 
 # Followup -> reflect -> clean state
 builder.add_edge("generateFollowup", "reflect")

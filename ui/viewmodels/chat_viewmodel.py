@@ -283,6 +283,7 @@ class ChatViewModel(QObject):
                 "assistant_id": self._assistant_id,
                 "model": self._settings_viewmodel.default_model
                 or self._settings.get("model", "anthropic/claude-3.5-sonnet"),
+                "image_model": self._settings_viewmodel.image_model,
                 "temperature": self._settings.get("temperature", 0.5),
                 "max_tokens": self._settings.get("max_tokens", 4096),
                 "api_key": self._settings_viewmodel.api_key or None,

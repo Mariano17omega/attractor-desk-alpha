@@ -29,6 +29,17 @@ DEFAULT_MODELS = [
     "deepseek/deepseek-chat",
 ]
 
+DEFAULT_IMAGE_MODELS = [
+    "anthropic/claude-3.5-sonnet",
+    "anthropic/claude-3-opus",
+    "anthropic/claude-3-haiku",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "openai/gpt-4-turbo",
+    "google/gemini-pro-1.5",
+    "google/gemini-flash-1.5",
+]
+
 DEFAULT_SHORTCUT_DEFINITIONS = [
     ShortcutDefinition(
         action_id="send_message",
@@ -98,6 +109,8 @@ class SettingsViewModel(QObject):
     KEY_TRANSPARENCY = "theme.transparency"
     KEY_KEEP_ABOVE = "theme.keep_above"
     KEY_DEFAULT_MODEL = "models.default"
+    KEY_IMAGE_MODEL = "models.image_model"
+    KEY_IMAGE_MODEL_LIST = "models.image_list"
     KEY_MODEL_LIST = "models.list"
     KEY_API_KEY = "models.api_key"
     KEY_DEEP_SEARCH_ENABLED = "deep_search.enabled"
@@ -138,7 +151,10 @@ class SettingsViewModel(QObject):
         self._keep_above: bool = False
         self._api_key: str = ""
         self._default_model: str = DEFAULT_MODEL
+        self._default_model: str = DEFAULT_MODEL
+        self._image_model: str = DEFAULT_IMAGE_MODELS[0]
         self._models: list[str] = DEFAULT_MODELS.copy()
+        self._image_models: list[str] = DEFAULT_IMAGE_MODELS.copy()
         self._deep_search_enabled: bool = False
         self._exa_api_key: str = ""
         self._firecrawl_api_key: str = ""
@@ -243,6 +259,16 @@ class SettingsViewModel(QObject):
             self.settings_changed.emit()
 
     @property
+    def image_model(self) -> str:
+        return self._image_model
+
+    @image_model.setter
+    def image_model(self, value: str) -> None:
+        if value and self._image_model != value:
+            self._image_model = value
+            self.settings_changed.emit()
+
+    @property
     def models(self) -> list[str]:
         return self._models.copy()
 
@@ -251,6 +277,17 @@ class SettingsViewModel(QObject):
         if not model_id or model_id in self._models:
             return
         self._models.append(model_id)
+        self.settings_changed.emit()
+
+    @property
+    def image_models(self) -> list[str]:
+        return self._image_models.copy()
+
+    def add_image_model(self, model_id: str) -> None:
+        model_id = model_id.strip()
+        if not model_id or model_id in self._image_models:
+            return
+        self._image_models.append(model_id)
         self.settings_changed.emit()
 
     @property
@@ -512,7 +549,9 @@ class SettingsViewModel(QObject):
             "keep_above": self._keep_above,
             "api_key": self._api_key,
             "default_model": self._default_model,
+            "image_model": self._image_model,
             "models": self._models.copy(),
+            "image_models": self._image_models.copy(),
             "deep_search_enabled": self._deep_search_enabled,
             "exa_api_key": self._exa_api_key,
             "firecrawl_api_key": self._firecrawl_api_key,
@@ -540,7 +579,9 @@ class SettingsViewModel(QObject):
         self._keep_above = bool(snapshot.get("keep_above", False))
         self._api_key = snapshot.get("api_key", "") or ""
         self._default_model = snapshot.get("default_model", DEFAULT_MODEL)
+        self._image_model = snapshot.get("image_model", DEFAULT_IMAGE_MODELS[0])
         self._models = list(snapshot.get("models", DEFAULT_MODELS.copy()))
+        self._image_models = list(snapshot.get("image_models", DEFAULT_IMAGE_MODELS.copy()))
         self._deep_search_enabled = bool(snapshot.get("deep_search_enabled", False))
         self._exa_api_key = snapshot.get("exa_api_key", "") or ""
         self._firecrawl_api_key = snapshot.get("firecrawl_api_key", "") or ""
@@ -590,6 +631,7 @@ class SettingsViewModel(QObject):
         self._transparency = self._settings_repo.get_int(self.KEY_TRANSPARENCY, 100)
         self._keep_above = self._settings_repo.get_bool(self.KEY_KEEP_ABOVE, False)
         self._default_model = self._settings_repo.get_value(self.KEY_DEFAULT_MODEL, DEFAULT_MODEL)
+        self._image_model = self._settings_repo.get_value(self.KEY_IMAGE_MODEL, DEFAULT_IMAGE_MODELS[0])
 
         # Load API keys from keyring (not SQLite)
         self._api_key = self._keyring_service.get_credential("openrouter") or ""
@@ -604,6 +646,15 @@ class SettingsViewModel(QObject):
                     self._models = [str(item) for item in parsed]
             except json.JSONDecodeError:
                 self._models = DEFAULT_MODELS.copy()
+
+        image_model_list = self._settings_repo.get_value(self.KEY_IMAGE_MODEL_LIST, "")
+        if image_model_list:
+            try:
+                parsed = json.loads(image_model_list)
+                if isinstance(parsed, list) and parsed:
+                    self._image_models = [str(item) for item in parsed]
+            except json.JSONDecodeError:
+                self._image_models = DEFAULT_IMAGE_MODELS.copy()
 
         # Load Deep Search settings (non-secret parts from SQLite)
         self._deep_search_enabled = self._settings_repo.get_bool(self.KEY_DEEP_SEARCH_ENABLED, False)
@@ -702,8 +753,18 @@ class SettingsViewModel(QObject):
                 "models",
             )
             self._settings_repo.set(
+                self.KEY_IMAGE_MODEL,
+                self._image_model,
+                "models",
+            )
+            self._settings_repo.set(
                 self.KEY_MODEL_LIST,
                 json.dumps(self._models),
+                "models",
+            )
+            self._settings_repo.set(
+                self.KEY_IMAGE_MODEL_LIST,
+                json.dumps(self._image_models),
                 "models",
             )
             # Save Deep Search settings (non-secret parts to SQLite)

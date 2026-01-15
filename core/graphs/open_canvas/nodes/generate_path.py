@@ -98,6 +98,7 @@ async def _dynamic_determine_path(
         # custom override to fix routing bias
         artifact_options = """
 - 'rewriteArtifact': The user has requested a change to the artifact. This includes editing text, modifying paragraphs, fixing code, changing styles, appending new content, or ANY modification to the existing content. Use this for requests like "add x", "change y", "fix z", "make it better", etc.
+- 'imageProcessing': The user has sent a message involving an image, or explicitly asked for image analysis. Use this when the request is primarily about understanding or processing an image.
 - 'replyToGeneralInput': The user submitted a general input which does not require making an update to the artifact. This is for questions unrelated to the artifact or simple greetings.
 """
         current_artifact = get_artifact_content(state.artifact)
@@ -105,7 +106,11 @@ async def _dynamic_determine_path(
             artifact=format_artifact_content(current_artifact, shorten_content=True)
         )
     else:
-        artifact_options = ROUTE_QUERY_OPTIONS_NO_ARTIFACTS
+        # artifact_options = ROUTE_QUERY_OPTIONS_NO_ARTIFACTS
+        artifact_options = """
+- 'generateArtifact': The user has inputted a request which requires generating an artifact.
+- 'imageProcessing': The user has sent a message involving an image, or explicitly asked for image analysis. Use this when the request is primarily about understanding or processing an image.
+- 'replyToGeneralInput': The user submitted a general input which does not require making an update, edit or generating a new artifact. This should ONLY be used if you are ABSOLUTELY sure the user does NOT want to make an edit, update or generate a new artifact."""
         current_artifact_prompt = NO_ARTIFACT_PROMPT
     
     # Format recent messages (match TypeScript: last 3 messages)
@@ -119,21 +124,44 @@ async def _dynamic_determine_path(
         currentArtifactPrompt=current_artifact_prompt,
     )
     
-    # Create STRICT routing schema with only 2 options (matches TypeScript exactly)
-    # TypeScript: z.enum(["replyToGeneralInput", artifactRoute])
-    valid_routes = ("replyToGeneralInput", artifact_route)
+    # Create STRICT routing schema with 3 options
+    valid_routes = ("replyToGeneralInput", artifact_route, "imageProcessing")
     
     class RouteDecision(BaseModel):
-        """The routing decision - limited to 2 options."""
-        route: Literal["replyToGeneralInput", "rewriteArtifact", "generateArtifact"] = Field(
-            description=f"The route to take: '{valid_routes[0]}' or '{valid_routes[1]}'"
+        """The routing decision."""
+        route: Literal["replyToGeneralInput", "rewriteArtifact", "generateArtifact", "imageProcessing"] = Field(
+            description=f"The route to take: one of {valid_routes}"
         )
     
     # Get routing decision using tool calling (matches TypeScript bindTools pattern)
     model_with_output = model.with_structured_output(RouteDecision, name="route_query")
     
     # Get the last user message text
-    last_msg_content = recent_messages[-1].content if recent_messages else "No recent messages"
+    # Get the last user message text and check for images
+    last_msg = recent_messages[-1]
+    last_msg_content = "No recent messages"
+    has_image_attachment = False
+
+    if hasattr(last_msg, "content"):
+        if isinstance(last_msg.content, str):
+            last_msg_content = last_msg.content
+        elif isinstance(last_msg.content, list):
+            # Handle list content (multimodal)
+            text_parts = []
+            for item in last_msg.content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        text_parts.append(item.get("text", ""))
+                    elif item.get("type") == "image_url":
+                        has_image_attachment = True
+            last_msg_content = "\n".join(text_parts)
+    
+    # If user attached an image, treat it as an explicit request for image processing
+    # This avoids sending huge base64 images to the routing LLM (causing 400 errors)
+    if has_image_attachment:
+        return {"next": "imageProcessing"}
+    
+    # Fallback to string conversion if needed (e.g. other complex types)
     if not isinstance(last_msg_content, str):
         last_msg_content = str(last_msg_content)
 

@@ -46,11 +46,22 @@ async def update_highlighted_text(
     
     full_markdown = current_content.full_markdown
     selected_text = state.highlighted_text.selected_text
+    markdown_block = state.highlighted_text.markdown_block
     
-    # Find the selected text in the full markdown
-    text_start = full_markdown.find(selected_text)
-    if text_start == -1:
-        raise ValueError("Selected text not found in artifact")
+    # Use markdown_block to disambiguate duplicate occurrences of selected_text.
+    # First find the block, then locate selected_text within that block context.
+    block_start = full_markdown.find(markdown_block)
+    if block_start == -1:
+        # Fallback: if block not found, try direct search (legacy behavior)
+        text_start = full_markdown.find(selected_text)
+        if text_start == -1:
+            raise ValueError("Selected text not found in artifact")
+    else:
+        # Find selected_text within the markdown_block
+        offset_in_block = markdown_block.find(selected_text)
+        if offset_in_block == -1:
+            raise ValueError("Selected text not found within markdown block")
+        text_start = block_start + offset_in_block
     
     text_end = text_start + len(selected_text)
     

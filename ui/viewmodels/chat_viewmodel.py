@@ -37,13 +37,14 @@ from ui.services.image_utils import file_path_to_data_url
 class GraphWorker(QThread):
     """Worker thread for running the graph asynchronously."""
     
-    finished = Signal(dict)
-    error = Signal(str)
+    finished = Signal(dict, str)  # result, run_token
+    error = Signal(str, str)      # error, run_token
     
-    def __init__(self, state: dict, config: dict):
+    def __init__(self, state: dict, config: dict, run_token: str):
         super().__init__()
         self.state = state
         self.config = config
+        self.run_token = run_token
     
     def run(self):
         """Run the graph in the worker thread."""
@@ -56,9 +57,9 @@ class GraphWorker(QThread):
             )
             
             loop.close()
-            self.finished.emit(result)
+            self.finished.emit(result, self.run_token)
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit(str(e), self.run_token)
 
 
 class ChatViewModel(QObject):
@@ -101,7 +102,7 @@ class ChatViewModel(QObject):
         self._pending_attachments: list[str] = []
 
         self._worker: Optional[GraphWorker] = None
-        self._cancelled = False
+        self._active_run_token: Optional[str] = None
 
         # PDF import service
         self._docling_service = DoclingService(self)
@@ -209,8 +210,6 @@ class ChatViewModel(QObject):
         if self._is_loading or not self._current_session:
             return
 
-        self._cancelled = False
-
         user_record = Message.create(
             session_id=self._current_session.id,
             role=MessageRole.USER,
@@ -305,17 +304,18 @@ class ChatViewModel(QObject):
             }
         }
         
-        # Run in worker thread
-        self._worker = GraphWorker(state, config)
+        # Run in worker thread with a unique run token
+        run_token = str(uuid4())
+        self._active_run_token = run_token
+        self._worker = GraphWorker(state, config, run_token)
         self._worker.finished.connect(self._on_graph_finished)
         self._worker.error.connect(self._on_graph_error)
         self._worker.start()
     
-    def _on_graph_finished(self, result: dict):
+    def _on_graph_finished(self, result: dict, run_token: str):
         """Handle successful graph execution."""
-        if self._cancelled:
-            self._cancelled = False
-            self._set_loading(False)
+        # Ignore stale results from cancelled or outdated workers
+        if run_token != self._active_run_token:
             return
 
         self._set_loading(False)
@@ -380,8 +380,12 @@ class ChatViewModel(QObject):
                 self._session_repository.update(self._current_session)
                 self.session_updated.emit()
     
-    def _on_graph_error(self, error: str):
+    def _on_graph_error(self, error: str, run_token: str):
         """Handle graph execution error."""
+        # Ignore stale errors from cancelled or outdated workers
+        if run_token != self._active_run_token:
+            return
+        
         self._set_loading(False)
         self.status_changed.emit("Error")
         self.error_occurred.emit(error)
@@ -419,7 +423,7 @@ class ChatViewModel(QObject):
         """Cancel the current generation (best-effort)."""
         if not self._is_loading:
             return
-        self._cancelled = True
+        self._active_run_token = None  # Invalidate token to ignore stale results
         self._set_loading(False)
         self.status_changed.emit("Cancelled")
 

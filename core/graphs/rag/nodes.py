@@ -11,6 +11,7 @@ from langgraph.config import RunnableConfig
 from core.persistence import Database, RagRepository
 from core.services.rag_service import RagRetrievalSettings, RagService
 from core.graphs.open_canvas.state import OpenCanvasState
+from core.utils.messages import get_string_from_content
 
 
 def decide_retrieve(state: OpenCanvasState, config: RunnableConfig) -> dict:
@@ -95,7 +96,7 @@ def retrieve_context(state: OpenCanvasState, config: RunnableConfig) -> dict:
 def _last_user_message(messages: list[BaseMessage]) -> Optional[str]:
     for message in reversed(messages):
         if getattr(message, "type", "") == "human":
-            return message.content if isinstance(message.content, str) else str(message.content)
+            return get_string_from_content(message.content)
     return None
 
 

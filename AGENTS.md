@@ -94,7 +94,9 @@ The primary use case is **academic research** (master’s and PhD level), includ
   - `rag_documents`, `rag_chunks`, `rag_chunks_fts`, `rag_embeddings`
 - **Settings**
   - Stored in SQLite
-  - API keys may load from environment variables or `API_KEY.txt`
+  - API keys stored securely in OS keyring (Keychain/Secret Service/Credential Locker)
+  - Fallback to environment variables for CI/CD
+  - Legacy `API_KEY.txt` supported with migration prompt
 - **Store**
   - LangGraph uses an in-memory store in `core/store` for reflections (non-persistent)
 
@@ -133,7 +135,7 @@ The primary use case is **academic research** (master’s and PhD level), includ
 - **Qt Threading**
   - Graph execution and PDF conversion must not block the UI thread
 - **Configuration**
-  - `OPENROUTER_API_KEY` is required
+  - `OPENROUTER_API_KEY` is required (stored in OS keyring or environment variable)
   - Optional keys enable LangSmith, Exa, and Firecrawl
 - **Image Attachments**
   - Screen captures saved to `/home/m/Documents/Attractor_Imagens`

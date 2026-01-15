@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
 
 from core.constants import DEFAULT_EMBEDDING_MODEL, DEFAULT_MODEL
+from core.infrastructure.keyring_service import KeyringService, get_keyring_service
 from core.models import ShortcutDefinition, ThemeMode
 from core.persistence import Database, SettingsRepository
 
@@ -89,6 +91,7 @@ class SettingsViewModel(QObject):
     keep_above_changed = Signal(bool)
     deep_search_toggled = Signal(bool)
     shortcuts_changed = Signal()
+    keys_migrated = Signal(dict)  # Emitted after legacy key migration with results
 
     KEY_THEME_MODE = "theme.mode"
     KEY_FONT_FAMILY = "theme.font_family"
@@ -121,11 +124,13 @@ class SettingsViewModel(QObject):
     def __init__(
         self,
         settings_db: Optional[Database] = None,
+        keyring_service: Optional[KeyringService] = None,
         parent: Optional[QObject] = None,
     ):
         super().__init__(parent)
         self._settings_db = settings_db or Database()
         self._settings_repo = SettingsRepository(self._settings_db)
+        self._keyring_service = keyring_service or get_keyring_service()
 
         self._theme_mode: ThemeMode = ThemeMode.DARK
         self._font_family: str = "Segoe UI"
@@ -205,6 +210,16 @@ class SettingsViewModel(QObject):
             self._keep_above = bool(value)
             self.keep_above_changed.emit(self._keep_above)
             self.settings_changed.emit()
+
+    @property
+    def keyring_available(self) -> bool:
+        """Check if the keyring backend is available."""
+        return self._keyring_service.is_available
+
+    @property
+    def has_openrouter_key(self) -> bool:
+        """Check if OpenRouter API key is configured."""
+        return bool(self._api_key) or self._keyring_service.has_credential("openrouter")
 
     @property
     def api_key(self) -> str:
@@ -574,8 +589,12 @@ class SettingsViewModel(QObject):
         self._font_family = self._settings_repo.get_value(self.KEY_FONT_FAMILY, "Segoe UI")
         self._transparency = self._settings_repo.get_int(self.KEY_TRANSPARENCY, 100)
         self._keep_above = self._settings_repo.get_bool(self.KEY_KEEP_ABOVE, False)
-        self._api_key = self._settings_repo.get_value(self.KEY_API_KEY, "")
         self._default_model = self._settings_repo.get_value(self.KEY_DEFAULT_MODEL, DEFAULT_MODEL)
+
+        # Load API keys from keyring (not SQLite)
+        self._api_key = self._keyring_service.get_credential("openrouter") or ""
+        self._exa_api_key = self._keyring_service.get_credential("exa") or ""
+        self._firecrawl_api_key = self._keyring_service.get_credential("firecrawl") or ""
 
         model_list = self._settings_repo.get_value(self.KEY_MODEL_LIST, "")
         if model_list:
@@ -586,10 +605,8 @@ class SettingsViewModel(QObject):
             except json.JSONDecodeError:
                 self._models = DEFAULT_MODELS.copy()
 
-        # Load Deep Search settings
+        # Load Deep Search settings (non-secret parts from SQLite)
         self._deep_search_enabled = self._settings_repo.get_bool(self.KEY_DEEP_SEARCH_ENABLED, False)
-        self._exa_api_key = self._settings_repo.get_value(self.KEY_EXA_API_KEY, "")
-        self._firecrawl_api_key = self._settings_repo.get_value(self.KEY_FIRECRAWL_API_KEY, "")
         self._search_provider = self._settings_repo.get_value(self.KEY_SEARCH_PROVIDER, "exa")
         self._deep_search_num_results = self._settings_repo.get_int(self.KEY_DEEP_SEARCH_NUM_RESULTS, 5)
 
@@ -672,11 +689,13 @@ class SettingsViewModel(QObject):
                 str(self._keep_above).lower(),
                 "theme",
             )
-            self._settings_repo.set(
-                self.KEY_API_KEY,
-                self._api_key,
-                "models",
-            )
+            # Store API keys in keyring (not SQLite)
+            if self._api_key:
+                self._keyring_service.store_credential("openrouter", self._api_key)
+            if self._exa_api_key:
+                self._keyring_service.store_credential("exa", self._exa_api_key)
+            if self._firecrawl_api_key:
+                self._keyring_service.store_credential("firecrawl", self._firecrawl_api_key)
             self._settings_repo.set(
                 self.KEY_DEFAULT_MODEL,
                 self._default_model,
@@ -687,20 +706,15 @@ class SettingsViewModel(QObject):
                 json.dumps(self._models),
                 "models",
             )
-            # Save Deep Search settings
+            # Save Deep Search settings (non-secret parts to SQLite)
             self._settings_repo.set(
                 self.KEY_DEEP_SEARCH_ENABLED,
                 str(self._deep_search_enabled).lower(),
                 "deep_search",
             )
             self._settings_repo.set(
-                self.KEY_EXA_API_KEY,
-                self._exa_api_key,
-                "deep_search",
-            )
-            self._settings_repo.set(
-                self.KEY_FIRECRAWL_API_KEY,
-                self._firecrawl_api_key,
+                self.KEY_SEARCH_PROVIDER,
+                self._search_provider,
                 "deep_search",
             )
             self._settings_repo.set(
@@ -800,3 +814,34 @@ class SettingsViewModel(QObject):
     def revert_to_saved(self) -> None:
         """Restore values from last saved state."""
         self.restore_snapshot(self._saved_state.copy())
+
+    def migrate_legacy_keys(self, legacy_file_path: Optional[Path] = None) -> dict[str, bool]:
+        """
+        Migrate API keys from legacy API_KEY.txt file to keyring.
+        
+        Args:
+            legacy_file_path: Path to API_KEY.txt file. If None, uses default location.
+            
+        Returns:
+            Dictionary mapping credential names to migration success (True/False).
+            Empty dict if no migration needed or keyring unavailable.
+        """
+        if legacy_file_path is None:
+            # Default to project root API_KEY.txt
+            from core.config import get_config_path
+            legacy_file_path = get_config_path()
+        
+        if not legacy_file_path.exists():
+            return {}
+        
+        if not self._keyring_service.is_available:
+            return {}
+        
+        results = self._keyring_service.migrate_from_file(legacy_file_path)
+        
+        if results:
+            # Reload settings to pick up migrated keys
+            self.load_settings()
+            self.keys_migrated.emit(results)
+        
+        return results

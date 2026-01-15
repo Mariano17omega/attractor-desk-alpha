@@ -50,10 +50,26 @@ We follow a strict separation of concerns:
    ```
 
 4. **Configure your API keys:**
+
+   **Option A: Via Settings (Recommended)**
+   
+   Launch the application and configure your API keys in **Settings** → **Model Configuration**. Keys are stored securely in your operating system's credential vault (Keychain on macOS, Secret Service on Linux, Credential Locker on Windows).
+
+   **Option B: Environment Variables**
+   
+   For CI/CD or containerized environments:
+   ```bash
+   export OPENROUTER_API_KEY=sk-or-...
+   export EXA_API_KEY=...  # Optional
+   ```
+
+   **Option C: Legacy File (Deprecated)**
+   
+   For backwards compatibility, copy `API_KEY.txt.example` to `API_KEY.txt`. On first launch, keys will be migrated to secure storage.
    ```bash
    cp API_KEY.txt.example API_KEY.txt
+   # Edit API_KEY.txt and add your keys
    ```
-   Edit `API_KEY.txt` and add your `OPENROUTER_API_KEY`.
 
 ## Usage
 
@@ -71,20 +87,39 @@ Alternatively, you can run it as a module:
 python -m ui.main
 ```
 
-### Key Configuration
+### API Key Configuration
 
-Manage your settings in `API_KEY.txt`:
+API keys are stored securely in your operating system's credential vault:
 
-```ini
-# Required
-OPENROUTER_API_KEY=sk-or-...
+| Platform | Backend |
+|----------|-------------------|
+| macOS | Keychain |
+| Linux | Secret Service (GNOME Keyring, KWallet) |
+| Windows | Credential Locker |
 
-# Optional: Enable deep search
-EXA_API_KEY=...
+**Configure via Settings UI:**
+1. Launch Attractor Desk
+2. Open Settings (Ctrl+,)
+3. Navigate to Model Configuration
+4. Enter your OpenRouter API key
+5. (Optional) Configure Exa, FireCrawl, or LangSmith keys
 
-# Optional: Enable LangSmith tracing
-LANGSMITH_API_KEY=ls-...
+**Environment Variable Fallback:**
+
+For CI/CD pipelines or headless environments, set environment variables:
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+export EXA_API_KEY=...           # Optional: Deep search
+export FIRECRAWL_API_KEY=...     # Optional: Web scraping
+export LANGSMITH_API_KEY=ls-...  # Optional: Tracing
 ```
+
+### Migrating from API_KEY.txt
+
+If you have an existing `API_KEY.txt` file:
+1. Launch the application
+2. Keys are automatically migrated to secure storage
+3. You may safely delete `API_KEY.txt` after confirming the app works
 
 ## contributing
 

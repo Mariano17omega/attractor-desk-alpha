@@ -37,7 +37,7 @@ Attractor Desk is a native Python desktop application for AI-assisted writing an
 - **Repositories**: SQLite repositories in `core/persistence` wrap DB access.
 - **Services**: PDF conversion and artifact export live in `core/services`.
 - **Threading**: Graph execution, PDF conversion, and RAG indexing run in `QThread` workers to keep UI responsive.
-- **Settings**: `SettingsViewModel` owns user-configurable options and persists to SQLite via `SettingsRepository`.
+- **Settings**: `SettingsViewModel` owns user-configurable options and persists to SQLite via `SettingsRepository`. API keys are stored securely in the OS keyring via `KeyringService`.
 
 ### Data and Persistence
 - **SQLite**: Default DB at `~/.open_canvas/database.db` (WAL) with tables for workspaces, sessions, messages, message_attachments, artifacts, RAG, and settings.
@@ -45,8 +45,9 @@ Attractor Desk is a native Python desktop application for AI-assisted writing an
 - **Export**: Artifacts export to `~/Documents/Artifacts/Articles` via `ArtifactExportService`.
 - **Attachments**: Message attachments store file paths in SQLite; images are injected into chat payloads as data URLs.
 - **RAG Storage**: `rag_documents`, `rag_chunks`, `rag_chunks_fts`, and `rag_embeddings` live in SQLite.
-- **Settings**: Stored in SQLite; API keys also load from `API_KEY.txt` or environment variables.
+- **Settings**: Stored in SQLite; API keys are stored in the OS keyring (Keychain/Secret Service/Credential Locker) with fallback to environment variables.
 - **Store**: LangGraph uses an in-memory store in `core/store` for reflections (non-persistent).
+- **Infrastructure**: `core/infrastructure/keyring_service.py` provides secure credential storage with migration support for legacy `API_KEY.txt` files.
 
 ### Testing Strategy
 - **Unit Tests**: pytest for core logic, persistence, RAG, providers, and viewmodels.
@@ -67,7 +68,7 @@ Attractor Desk is a native Python desktop application for AI-assisted writing an
 
 ## Important Constraints
 - **Qt Threading**: Graph execution and PDF conversion run off the main UI thread (QThread) to avoid freezes.
-- **Configuration**: `OPENROUTER_API_KEY` is required; optional keys enable LangSmith, Exa, and Firecrawl.
+- **Configuration**: `OPENROUTER_API_KEY` is required (stored in OS keyring or environment variable); optional keys enable LangSmith, Exa, and Firecrawl.
 - **Image Attachments**: Screen captures are saved to `/home/m/Documents/Attractor_Imagens`; images attach only if the model supports vision.
 - **Incomplete Nodes**: Summarizer/title/web search nodes exist but are placeholders in the current graph.
 

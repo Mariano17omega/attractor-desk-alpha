@@ -1,8 +1,21 @@
-# Open Canvas Python - API Key Configuration
+# ⚠️ DEPRECATED - API Key Configuration
 #
-# Format: KEY=VALUE (one per line)
-# Lines starting with # are comments
+# This file-based API key storage is DEPRECATED.
+# API keys should now be configured via the Settings UI, where they are
+# stored securely in your operating system's credential vault.
 #
+# MIGRATION:
+# If you have existing keys in this file, the application will automatically
+# migrate them to secure storage on first launch.
+#
+# For CI/CD or headless environments, use environment variables instead:
+#   export OPENROUTER_API_KEY=sk-or-...
+#   export EXA_API_KEY=...
+#   export FIRECRAWL_API_KEY=...
+#   export LANGSMITH_API_KEY=ls-...
+#
+# =========================================================================
+
 # Required:
 OPENROUTER_API_KEY=your-openrouter-api-key-here
 

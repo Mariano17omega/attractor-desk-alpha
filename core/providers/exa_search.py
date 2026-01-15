@@ -13,7 +13,7 @@ class ExaSearchProvider(SearchProvider):
     """
     Search provider using Exa.ai semantic search.
     
-    Requires EXA_API_KEY in API_KEY.txt.
+    Requires EXA_API_KEY configured via Settings or environment variable.
     """
     
     def __init__(self, api_key: Optional[str] = None):
@@ -38,7 +38,7 @@ class ExaSearchProvider(SearchProvider):
             if not self.is_available:
                 raise ValueError(
                     "Exa API key not configured. "
-                    "Add EXA_API_KEY to API_KEY.txt to enable web search."
+                    "Configure it in Settings or set EXA_API_KEY environment variable."
                 )
             
             try:

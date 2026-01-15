@@ -21,8 +21,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 
-from core.config import get_api_key, load_config
-
 
 # Available models through OpenRouter
 AVAILABLE_MODELS = [
@@ -182,8 +180,8 @@ class SettingsDialog(QDialog):
         max_tokens = self._current_settings.get("max_tokens", 4096)
         self.max_tokens_spin.setValue(max_tokens)
         
-        # API Key
-        api_key = self._current_settings.get("api_key") or get_api_key("OPENROUTER_API_KEY") or ""
+        # API Key (should be provided in current_settings from ViewModel)
+        api_key = self._current_settings.get("api_key", "")
         self.api_key_edit.setText(api_key)
         
         # Streaming

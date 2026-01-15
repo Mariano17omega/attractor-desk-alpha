@@ -24,7 +24,7 @@ class FireCrawlProvider:
     """
     Web scraping provider using FireCrawl.
     
-    Requires FIRECRAWL_API_KEY in API_KEY.txt.
+    Requires FIRECRAWL_API_KEY configured via Settings or environment variable.
     """
     
     def __init__(self, api_key: Optional[str] = None):
@@ -49,7 +49,7 @@ class FireCrawlProvider:
             if not self.is_available:
                 raise ValueError(
                     "FireCrawl API key not configured. "
-                    "Add FIRECRAWL_API_KEY to API_KEY.txt to enable web scraping."
+                    "Configure it in Settings or set FIRECRAWL_API_KEY environment variable."
                 )
             
             try:

@@ -123,18 +123,9 @@ class ModelCapabilitiesService:
     def _heuristic_supports_images(model_name: str) -> bool:
         lowered = model_name.lower()
         keywords = (
-            "vision",
-            "gpt-4o",
-            "gpt-4-turbo",
-            "gpt-4v",
-            "claude-3",
-            "claude-3.5",
-            "gemini",
-            "llava",
-            "pixtral",
-            "qwen-vl",
-            "idefics",
-            "minicpm",
-            "phi-3-vision",
+            "nvidia/nemotron-nano-12b-v2-vl:free",
+            "mistralai/mistral-small-3.1-24b-instruct:free",
+            "mistralai/mistral-small-3.1-24b-instruct",
+            "openai/gpt-5-nano",
         )
         return any(keyword in lowered for keyword in keywords)

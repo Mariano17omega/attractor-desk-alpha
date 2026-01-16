@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Signal, Qt, QEvent
+from PySide6.QtCore import Signal, Qt, QEvent, QPoint
 from PySide6.QtGui import QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -364,7 +365,7 @@ class ChatPanel(QFrame):
 
         self._add_btn = QPushButton("+")
         self._add_btn.setObjectName("iconButton")
-        self._add_btn.setToolTip("Import PDF as artifact")
+        self._add_btn.setToolTip("Add PDF")
         self._add_btn.setFixedSize(32, 32)
         self._add_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         input_row_layout.addWidget(self._add_btn)
@@ -429,6 +430,7 @@ class ChatPanel(QFrame):
         self._add_btn.clicked.connect(self._on_add_clicked)
         self._deep_search_btn.clicked.connect(self._on_deep_search_toggled)
         self.viewmodel.pdf_import_status.connect(self._on_pdf_status)
+        self.viewmodel.chatpdf_status.connect(self._on_chatpdf_status)
         self.view_model_signals()
 
 
@@ -498,18 +500,36 @@ class ChatPanel(QFrame):
         self._message_input.set_send_sequence(sequence)
 
     def _on_add_clicked(self) -> None:
-        """Open PDF file dialog and import selected file."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select PDF to Import",
-            "",
-            "PDF Files (*.pdf)",
-        )
-        if file_path:
-            self.viewmodel.import_pdf(file_path)
+        """Open PDF options menu."""
+        menu = QMenu(self)
+        import_action = menu.addAction("Import PDF as artifact")
+        chatpdf_action = menu.addAction("Open PDF in ChatPDF")
+        selected = menu.exec(self._add_btn.mapToGlobal(QPoint(0, self._add_btn.height())))
+        if selected == import_action:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Select PDF to Import",
+                "",
+                "PDF Files (*.pdf)",
+            )
+            if file_path:
+                self.viewmodel.import_pdf(file_path)
+        elif selected == chatpdf_action:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Select PDF for ChatPDF",
+                "",
+                "PDF Files (*.pdf)",
+            )
+            if file_path:
+                self.viewmodel.open_chatpdf(file_path)
 
     def _on_pdf_status(self, status: str) -> None:
         """Display PDF import status in the chat."""
+        if status:
+            self.viewmodel.status_changed.emit(status)
+
+    def _on_chatpdf_status(self, status: str) -> None:
         if status:
             self.viewmodel.status_changed.emit(status)
 

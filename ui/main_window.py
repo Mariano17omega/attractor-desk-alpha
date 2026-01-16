@@ -25,7 +25,7 @@ from core.persistence import (
     SessionRepository,
     WorkspaceRepository,
 )
-from core.services import ModelCapabilitiesService, RagService
+from core.services import ModelCapabilitiesService, RagService, LocalRagService
 from ui.styles import get_dark_theme_stylesheet, get_light_theme_stylesheet
 from ui.services.screen_capture_service import ScreenCaptureService
 from ui.viewmodels.chat_viewmodel import ChatViewModel
@@ -54,6 +54,7 @@ class MainWindow(QMainWindow):
         self._artifact_repository = ArtifactRepository(self._database)
         self._rag_repository = RagRepository(self._database)
         self._rag_service = RagService(self._rag_repository)
+        self._local_rag_service = LocalRagService(self._rag_repository)
         self._capture_service = ScreenCaptureService()
         self._model_capabilities = ModelCapabilitiesService()
         self._shortcuts: dict[str, QShortcut] = {}
@@ -72,6 +73,7 @@ class MainWindow(QMainWindow):
             session_repository=self._session_repository,
             settings_viewmodel=self._settings_viewmodel,
             rag_service=self._rag_service,
+            local_rag_service=self._local_rag_service,
         )
         self._main_viewmodel = MainViewModel(
             chat_viewmodel=self._chat_viewmodel,
@@ -141,6 +143,9 @@ class MainWindow(QMainWindow):
         self._chat_viewmodel.status_changed.connect(self._update_status)
         self._chat_viewmodel.error_occurred.connect(self._update_error)
         self._chat_viewmodel.artifact_changed.connect(self._on_artifact_changed)
+        self._artifact_panel.artifact_selected.connect(
+            self._chat_viewmodel.on_artifact_selected
+        )
 
         self._settings_viewmodel.theme_changed.connect(self._apply_theme)
         self._settings_viewmodel.transparency_changed.connect(self._apply_transparency)

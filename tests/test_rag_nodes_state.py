@@ -12,6 +12,7 @@ from core.graphs.open_canvas.state import (
     is_summary_message,
 )
 from core.graphs.rag.nodes import decide_retrieve, rewrite_query, select_scope, _last_user_message
+from core.graphs.rag.graph import _route_after_rewrite
 
 
 def test_is_summary_message_detects_flags() -> None:
@@ -71,6 +72,28 @@ def test_select_scope_falls_back_to_workspace_without_session() -> None:
         {"configurable": {"rag_scope": "session", "session_id": "s1"}},
     )
     assert result["rag_scope"] == "session"
+
+
+def test_select_scope_defaults_to_global() -> None:
+    state = OpenCanvasState()
+    result = select_scope(state, {"configurable": {}})
+    assert result["rag_scope"] == "global"
+
+
+def test_select_scope_forces_session_in_chatpdf() -> None:
+    state = OpenCanvasState(conversation_mode="chatpdf")
+    result = select_scope(state, {"configurable": {"rag_scope": "global", "session_id": "s1"}})
+    assert result["rag_scope"] == "session"
+
+
+def test_route_after_rewrite_selects_local_for_chatpdf() -> None:
+    state = OpenCanvasState(conversation_mode="chatpdf")
+    assert _route_after_rewrite(state) == "localRag"
+
+
+def test_route_after_rewrite_selects_global_for_normal() -> None:
+    state = OpenCanvasState(conversation_mode="normal")
+    assert _route_after_rewrite(state) == "globalRag"
 
 
 def test_rewrite_query_adds_simplified_version() -> None:

@@ -74,4 +74,3 @@ def test_settings_viewmodel_deep_search_persistence(tmp_path: Path) -> None:
     assert reloaded.deep_search_enabled is True
     assert reloaded.exa_api_key == "exa-test-key-123"
     assert reloaded.deep_search_num_results == 10
-

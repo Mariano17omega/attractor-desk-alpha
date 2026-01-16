@@ -9,6 +9,8 @@ import uuid
 
 from .database import Database
 
+GLOBAL_WORKSPACE_ID = "GLOBAL"
+
 
 @dataclass(frozen=True)
 class RagDocument:
@@ -21,6 +23,9 @@ class RagDocument:
     source_name: str
     source_path: Optional[str]
     content_hash: str
+    indexed_at: Optional[datetime]
+    file_size: Optional[int]
+    stale_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
 
@@ -76,6 +81,20 @@ class RagEmbeddingInput:
     embedding_blob: bytes
 
 
+@dataclass(frozen=True)
+class RagIndexRegistryEntry:
+    """Registry entry for PDF indexing."""
+
+    source_path: str
+    content_hash: str
+    status: str
+    retry_count: int
+    last_seen_at: Optional[datetime]
+    last_indexed_at: Optional[datetime]
+    error_message: Optional[str]
+    embedding_model: Optional[str]
+
+
 class RagRepository:
     """Repository for RAG persistence operations."""
 
@@ -90,9 +109,14 @@ class RagRepository:
         content_hash: str,
         artifact_entry_id: Optional[str] = None,
         source_path: Optional[str] = None,
+        file_size: Optional[int] = None,
+        indexed_at: Optional[datetime] = None,
+        stale_at: Optional[datetime] = None,
     ) -> RagDocument:
         document_id = str(uuid.uuid4())
         now = datetime.now()
+        indexed_at_value = indexed_at or now
+        stale_at_value = stale_at.isoformat() if stale_at else None
         conn = self._db.get_connection()
         conn.execute(
             """
@@ -104,9 +128,12 @@ class RagRepository:
                 source_name,
                 source_path,
                 content_hash,
+                indexed_at,
+                file_size,
+                stale_at,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,
@@ -116,6 +143,9 @@ class RagRepository:
                 source_name,
                 source_path,
                 content_hash,
+                indexed_at_value.isoformat(),
+                file_size,
+                stale_at_value,
                 now.isoformat(),
                 now.isoformat(),
             ),
@@ -129,6 +159,9 @@ class RagRepository:
             source_name=source_name,
             source_path=source_path,
             content_hash=content_hash,
+            indexed_at=indexed_at_value,
+            file_size=file_size,
+            stale_at=stale_at,
             created_at=now,
             updated_at=now,
         )
@@ -140,6 +173,7 @@ class RagRepository:
         content_hash: str,
         source_path: Optional[str] = None,
         artifact_entry_id: Optional[str] = None,
+        file_size: Optional[int] = None,
     ) -> None:
         conn = self._db.get_connection()
         now = datetime.now().isoformat()
@@ -150,6 +184,8 @@ class RagRepository:
                 source_path = ?,
                 artifact_entry_id = ?,
                 content_hash = ?,
+                indexed_at = ?,
+                file_size = COALESCE(?, file_size),
                 updated_at = ?
             WHERE id = ?
             """,
@@ -158,6 +194,8 @@ class RagRepository:
                 source_path,
                 artifact_entry_id,
                 content_hash,
+                now,
+                file_size,
                 now,
                 document_id,
             ),
@@ -169,7 +207,7 @@ class RagRepository:
         cursor = conn.execute(
             """
             SELECT id, workspace_id, artifact_entry_id, source_type, source_name, source_path,
-                   content_hash, created_at, updated_at
+                   content_hash, indexed_at, file_size, stale_at, created_at, updated_at
             FROM rag_documents
             WHERE id = ?
             """,
@@ -189,7 +227,7 @@ class RagRepository:
         cursor = conn.execute(
             """
             SELECT id, workspace_id, artifact_entry_id, source_type, source_name, source_path,
-                   content_hash, created_at, updated_at
+                   content_hash, indexed_at, file_size, stale_at, created_at, updated_at
             FROM rag_documents
             WHERE workspace_id = ? AND artifact_entry_id = ?
             """,
@@ -213,6 +251,34 @@ class RagRepository:
         )
         conn.execute("DELETE FROM rag_documents WHERE id = ?", (document_id,))
         conn.commit()
+
+    def mark_session_documents_stale(self, session_id: str, stale_at: datetime) -> None:
+        conn = self._db.get_connection()
+        conn.execute(
+            """
+            UPDATE rag_documents
+            SET stale_at = ?
+            WHERE id IN (
+                SELECT document_id FROM rag_document_sessions WHERE session_id = ?
+            ) AND source_type = 'chatpdf'
+            """,
+            (stale_at.isoformat(), session_id),
+        )
+        conn.commit()
+
+    def list_stale_documents(self, cutoff: datetime) -> list[RagDocument]:
+        conn = self._db.get_connection()
+        cursor = conn.execute(
+            """
+            SELECT id, workspace_id, artifact_entry_id, source_type, source_name, source_path,
+                   content_hash, indexed_at, file_size, stale_at, created_at, updated_at
+            FROM rag_documents
+            WHERE stale_at IS NOT NULL AND stale_at <= ? AND source_type = 'chatpdf'
+            ORDER BY stale_at ASC
+            """,
+            (cutoff.isoformat(),),
+        )
+        return [_row_to_document(row) for row in cursor.fetchall()]
 
     def attach_document_to_session(self, document_id: str, session_id: str) -> None:
         conn = self._db.get_connection()
@@ -395,7 +461,8 @@ class RagRepository:
                 (session_id, query, limit),
             )
         else:
-            if not workspace_id:
+            workspace_scope = GLOBAL_WORKSPACE_ID if scope == "global" else workspace_id
+            if not workspace_scope:
                 return []
             cursor = conn.execute(
                 """
@@ -407,7 +474,7 @@ class RagRepository:
                 ORDER BY score
                 LIMIT ?
                 """,
-                (workspace_id, query, limit),
+                (workspace_scope, query, limit),
             )
         return [(row["chunk_id"], float(row["score"])) for row in cursor.fetchall()]
 
@@ -434,7 +501,8 @@ class RagRepository:
                 (session_id, model),
             )
         else:
-            if not workspace_id:
+            workspace_scope = GLOBAL_WORKSPACE_ID if scope == "global" else workspace_id
+            if not workspace_scope:
                 return []
             cursor = conn.execute(
                 """
@@ -444,12 +512,119 @@ class RagRepository:
                 JOIN rag_documents d ON d.id = c.document_id
                 WHERE d.workspace_id = ? AND e.model = ?
                 """,
-                (workspace_id, model),
+                (workspace_scope, model),
             )
         return [
             (row["chunk_id"], row["embedding_blob"], row["dims"])
             for row in cursor.fetchall()
         ]
+
+    def upsert_registry_entry(
+        self,
+        source_path: str,
+        content_hash: str,
+        status: str,
+        retry_count: int = 0,
+        last_seen_at: Optional[datetime] = None,
+        last_indexed_at: Optional[datetime] = None,
+        error_message: Optional[str] = None,
+        embedding_model: Optional[str] = None,
+    ) -> None:
+        conn = self._db.get_connection()
+        conn.execute(
+            """
+            DELETE FROM rag_index_registry
+            WHERE source_path = ? AND content_hash != ?
+            """,
+            (source_path, content_hash),
+        )
+        conn.execute(
+            """
+            INSERT INTO rag_index_registry (
+                source_path,
+                content_hash,
+                status,
+                retry_count,
+                last_seen_at,
+                last_indexed_at,
+                error_message,
+                embedding_model
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source_path, content_hash) DO UPDATE SET
+                status = excluded.status,
+                retry_count = excluded.retry_count,
+                last_seen_at = excluded.last_seen_at,
+                last_indexed_at = excluded.last_indexed_at,
+                error_message = excluded.error_message,
+                embedding_model = excluded.embedding_model
+            """,
+            (
+                source_path,
+                content_hash,
+                status,
+                retry_count,
+                last_seen_at.isoformat() if last_seen_at else None,
+                last_indexed_at.isoformat() if last_indexed_at else None,
+                error_message,
+                embedding_model,
+            ),
+        )
+        conn.commit()
+
+    def get_registry_entry(
+        self, source_path: str, content_hash: str
+    ) -> Optional[RagIndexRegistryEntry]:
+        conn = self._db.get_connection()
+        cursor = conn.execute(
+            """
+            SELECT source_path, content_hash, status, retry_count, last_seen_at, last_indexed_at,
+                   error_message, embedding_model
+            FROM rag_index_registry
+            WHERE source_path = ? AND content_hash = ?
+            """,
+            (source_path, content_hash),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_registry_entry(row)
+
+    def list_registry_entries(
+        self, status: Optional[str] = None
+    ) -> list[RagIndexRegistryEntry]:
+        conn = self._db.get_connection()
+        if status:
+            cursor = conn.execute(
+                """
+                SELECT source_path, content_hash, status, retry_count, last_seen_at, last_indexed_at,
+                       error_message, embedding_model
+                FROM rag_index_registry
+                WHERE status = ?
+                ORDER BY last_seen_at DESC
+                """,
+                (status,),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT source_path, content_hash, status, retry_count, last_seen_at, last_indexed_at,
+                       error_message, embedding_model
+                FROM rag_index_registry
+                ORDER BY last_seen_at DESC
+                """
+            )
+        return [_row_to_registry_entry(row) for row in cursor.fetchall()]
+
+    def get_registry_status_counts(self) -> dict[str, int]:
+        conn = self._db.get_connection()
+        cursor = conn.execute(
+            """
+            SELECT status, COUNT(*) AS count
+            FROM rag_index_registry
+            GROUP BY status
+            """
+        )
+        return {row["status"]: int(row["count"]) for row in cursor.fetchall()}
 
 
 def _row_to_document(row: dict) -> RagDocument:
@@ -461,9 +636,18 @@ def _row_to_document(row: dict) -> RagDocument:
         source_name=row["source_name"],
         source_path=row["source_path"],
         content_hash=row["content_hash"],
+        indexed_at=_parse_optional_datetime(row["indexed_at"]),
+        file_size=row["file_size"],
+        stale_at=_parse_optional_datetime(row["stale_at"]),
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),
     )
+
+
+def _parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
+    if value:
+        return datetime.fromisoformat(value)
+    return None
 
 
 def _row_to_chunk(row: dict) -> RagChunk:
@@ -491,4 +675,17 @@ def _row_to_chunk_details(row: dict) -> RagChunkDetails:
         source_type=row["source_type"],
         source_path=row["source_path"],
         document_updated_at=datetime.fromisoformat(row["updated_at"]),
+    )
+
+
+def _row_to_registry_entry(row: dict) -> RagIndexRegistryEntry:
+    return RagIndexRegistryEntry(
+        source_path=row["source_path"],
+        content_hash=row["content_hash"],
+        status=row["status"],
+        retry_count=row["retry_count"],
+        last_seen_at=_parse_optional_datetime(row["last_seen_at"]),
+        last_indexed_at=_parse_optional_datetime(row["last_indexed_at"]),
+        error_message=row["error_message"],
+        embedding_model=row["embedding_model"],
     )

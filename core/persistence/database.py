@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -74,6 +75,9 @@ class Database:
         source_name TEXT NOT NULL,
         source_path TEXT,
         content_hash TEXT NOT NULL,
+        indexed_at TEXT,
+        file_size INTEGER,
+        stale_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
@@ -123,6 +127,19 @@ class Database:
     );
     CREATE INDEX IF NOT EXISTS idx_rag_embeddings_model ON rag_embeddings(model);
 
+    -- RAG indexing registry
+    CREATE TABLE IF NOT EXISTS rag_index_registry (
+        source_path TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        retry_count INTEGER NOT NULL,
+        last_seen_at TEXT,
+        last_indexed_at TEXT,
+        error_message TEXT,
+        embedding_model TEXT,
+        PRIMARY KEY (source_path, content_hash)
+    );
+
     -- Settings
     CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
@@ -144,7 +161,65 @@ class Database:
     def _init_schema(self) -> None:
         conn = self.get_connection()
         conn.executescript(self.SCHEMA)
+        self._apply_migrations(conn)
         conn.commit()
+
+    def _apply_migrations(self, conn: sqlite3.Connection) -> None:
+        self._ensure_rag_document_columns(conn)
+        self._ensure_rag_index_registry(conn)
+        self._seed_global_workspace(conn)
+
+    def _ensure_rag_document_columns(self, conn: sqlite3.Connection) -> None:
+        cursor = conn.execute("PRAGMA table_info(rag_documents)")
+        existing = {row["name"] for row in cursor.fetchall()}
+        columns = {
+            "indexed_at": "TEXT",
+            "file_size": "INTEGER",
+            "stale_at": "TEXT",
+        }
+        for name, col_type in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE rag_documents ADD COLUMN {name} {col_type}")
+        conn.execute(
+            """
+            UPDATE rag_documents
+            SET indexed_at = created_at
+            WHERE indexed_at IS NULL
+            """
+        )
+
+    def _ensure_rag_index_registry(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rag_index_registry (
+                source_path TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                status TEXT NOT NULL,
+                retry_count INTEGER NOT NULL,
+                last_seen_at TEXT,
+                last_indexed_at TEXT,
+                error_message TEXT,
+                embedding_model TEXT,
+                PRIMARY KEY (source_path, content_hash)
+            )
+            """
+        )
+        cursor = conn.execute("PRAGMA table_info(rag_index_registry)")
+        existing = {row["name"] for row in cursor.fetchall()}
+        if "embedding_model" not in existing:
+            conn.execute(
+                "ALTER TABLE rag_index_registry ADD COLUMN embedding_model TEXT"
+            )
+
+    def _seed_global_workspace(self, conn: sqlite3.Connection) -> None:
+        now = datetime.now().isoformat()
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO workspaces (id, name, created_at)
+            VALUES (?, ?, ?)
+            """,
+            ("GLOBAL", "Global", now),
+        )
 
     def get_connection(self) -> sqlite3.Connection:
         """Get or create a database connection for the current thread."""

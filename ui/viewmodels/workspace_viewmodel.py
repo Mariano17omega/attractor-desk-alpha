@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, Signal, Property, Slot
 
 from core.models import Workspace, Session
 from core.persistence import ArtifactRepository, MessageRepository, SessionRepository, WorkspaceRepository
+from core.persistence.rag_repository import GLOBAL_WORKSPACE_ID
 
 
 class WorkspaceViewModel(QObject):
@@ -56,7 +57,11 @@ class WorkspaceViewModel(QObject):
         return self._current_session
 
     def _load_workspaces(self) -> None:
-        self._workspaces = self._workspace_repository.get_all()
+        self._workspaces = [
+            workspace
+            for workspace in self._workspace_repository.get_all()
+            if workspace.id != GLOBAL_WORKSPACE_ID
+        ]
         self.workspaces_changed.emit()
 
         if self._workspaces and self._current_workspace is None:

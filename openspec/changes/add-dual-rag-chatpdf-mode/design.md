@@ -32,8 +32,8 @@
 4) Default monitoring off; prompt user to pick a folder before enabling.
 5) Validate by running openspec + targeted tests (repository, services, graph routing, watcher debounce) before enabling in UI.
 
-## Open Questions
-- Retention window for stale ChatPDF docs (proposal: 7 days). Confirm expected default.
-- Default path for AttractorDeskRAG folder (proposal: `~/Documents/AttractorDeskRAG`).
-- Should global retrieval ever blend workspace scope when `rag_scope=workspace`? Current plan: keep global-only unless configured; need confirmation.
-- Whether to surface per-document embedding model/version in the document list for troubleshooting.
+## Resolved Questions
+- Retention window for stale ChatPDF docs: 7 days.
+- Default path for AttractorDeskRAG folder: `~/Documents/AttractorDeskRAG`.
+- Global retrieval remains global-only (no workspace blending unless explicitly added later).
+- Surface per-document embedding model/version in the document list for troubleshooting.

@@ -14,6 +14,7 @@ class ArtifactType(str, Enum):
     """Type of artifact content."""
     CODE = "code"
     TEXT = "text"
+    PDF = "pdf"
 
 
 class LanguageOptions(str, Enum):
@@ -108,7 +109,22 @@ class ArtifactCodeV3(BaseModel):
         populate_by_name = True
 
 
-ArtifactContent = Union[ArtifactMarkdownV3, ArtifactCodeV3]
+class ArtifactPdfV1(BaseModel):
+    """PDF artifact content for ChatPDF mode."""
+
+    index: int
+    type: Literal["pdf"] = "pdf"
+    title: str
+    pdf_path: str = Field(alias="pdfPath")
+    total_pages: Optional[int] = Field(default=None, alias="totalPages")
+    current_page: int = Field(default=1, alias="currentPage")
+    rag_document_id: Optional[str] = Field(default=None, alias="ragDocumentId")
+
+    class Config:
+        populate_by_name = True
+
+
+ArtifactContent = Union[ArtifactMarkdownV3, ArtifactCodeV3, ArtifactPdfV1]
 
 
 class ArtifactV3(BaseModel):

@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, QTimer
 
 from core.constants import DEFAULT_EMBEDDING_MODEL, DEFAULT_MODEL
 from core.infrastructure.keyring_service import KeyringService, get_keyring_service
 from core.models import ShortcutDefinition, ThemeMode
-from core.persistence import Database, SettingsRepository
+from core.persistence import Database, SettingsRepository, RagRepository
+from core.persistence.rag_repository import GLOBAL_WORKSPACE_ID
+from core.services import GlobalRagService, GlobalRagIndexRequest, PdfWatcherService
 
 
 DEFAULT_MODELS = [
@@ -103,6 +106,11 @@ class SettingsViewModel(QObject):
     deep_search_toggled = Signal(bool)
     shortcuts_changed = Signal()
     keys_migrated = Signal(dict)  # Emitted after legacy key migration with results
+    global_rag_progress = Signal(int, int, str)
+    global_rag_complete = Signal(object)
+    global_rag_error = Signal(str)
+    global_rag_registry_updated = Signal()
+    chatpdf_cleanup_complete = Signal(int)
 
     KEY_THEME_MODE = "theme.mode"
     KEY_FONT_FAMILY = "theme.font_family"
@@ -130,6 +138,9 @@ class SettingsViewModel(QObject):
     KEY_RAG_ENABLE_QUERY_REWRITE = "rag.enable_query_rewrite"
     KEY_RAG_ENABLE_LLM_RERANK = "rag.enable_llm_rerank"
     KEY_RAG_INDEX_TEXT = "rag.index_text_artifacts"
+    KEY_RAG_GLOBAL_FOLDER = "rag.global_folder"
+    KEY_RAG_GLOBAL_MONITORING = "rag.global_monitoring_enabled"
+    KEY_RAG_CHATPDF_RETENTION_DAYS = "rag.chatpdf_retention_days"
     KEY_SHORTCUT_BINDINGS = "shortcuts.bindings"
     KEY_SIDEBAR_VISIBLE = "ui.sidebar_visible"
     KEY_ARTIFACT_PANEL_VISIBLE = "ui.artifact_panel_visible"
@@ -161,7 +172,7 @@ class SettingsViewModel(QObject):
         self._search_provider: str = "exa"
         self._deep_search_num_results: int = 5
         self._rag_enabled: bool = False
-        self._rag_scope: str = "session"
+        self._rag_scope: str = "global"
         self._rag_chunk_size_chars: int = 1200
         self._rag_chunk_overlap_chars: int = 150
         self._rag_k_lex: int = 8
@@ -172,11 +183,26 @@ class SettingsViewModel(QObject):
         self._rag_enable_query_rewrite: bool = False
         self._rag_enable_llm_rerank: bool = False
         self._rag_index_text_artifacts: bool = False
+        self._rag_global_folder: str = str(Path.home() / "Documents" / "AttractorDeskRAG")
+        self._rag_global_monitoring_enabled: bool = False
+        self._rag_chatpdf_retention_days: int = 7
         self._shortcut_bindings: dict[str, str] = DEFAULT_SHORTCUT_BINDINGS.copy()
         self._sidebar_visible: bool = True
         self._artifact_panel_visible: bool = False
 
         self._saved_state: dict[str, object] = {}
+        self._rag_repository = RagRepository(self._settings_db)
+        self._global_rag_service = GlobalRagService(self._rag_repository, self)
+        self._global_rag_service.index_progress.connect(self._on_global_index_progress)
+        self._global_rag_service.index_complete.connect(self._on_global_index_complete)
+        self._global_rag_service.index_error.connect(self._on_global_index_error)
+        self._pdf_watcher_service = PdfWatcherService(self)
+        self._pdf_watcher_service.new_pdfs_detected.connect(self._on_global_pdfs_detected)
+        self._pdf_watcher_service.watcher_error.connect(self.global_rag_error.emit)
+        self._cleanup_timer = QTimer(self)
+        self._cleanup_timer.setInterval(24 * 60 * 60 * 1000)
+        self._cleanup_timer.timeout.connect(self._run_chatpdf_cleanup)
+        self._cleanup_timer.start()
         self.load_settings()
 
     @property
@@ -363,7 +389,7 @@ class SettingsViewModel(QObject):
 
     @rag_scope.setter
     def rag_scope(self, value: str) -> None:
-        value = value if value in ("session", "workspace") else "session"
+        value = value if value in ("session", "workspace", "global") else "global"
         if self._rag_scope != value:
             self._rag_scope = value
             self.settings_changed.emit()
@@ -483,6 +509,45 @@ class SettingsViewModel(QObject):
             self.settings_changed.emit()
 
     @property
+    def rag_global_folder(self) -> str:
+        return self._rag_global_folder
+
+    @rag_global_folder.setter
+    def rag_global_folder(self, value: str) -> None:
+        value = (value or "").strip()
+        if self._rag_global_folder != value:
+            self._rag_global_folder = value
+            self.settings_changed.emit()
+            if self._rag_global_monitoring_enabled:
+                self._start_global_monitoring()
+
+    @property
+    def rag_global_monitoring_enabled(self) -> bool:
+        return self._rag_global_monitoring_enabled
+
+    @rag_global_monitoring_enabled.setter
+    def rag_global_monitoring_enabled(self, value: bool) -> None:
+        value = bool(value)
+        if self._rag_global_monitoring_enabled != value:
+            self._rag_global_monitoring_enabled = value
+            self.settings_changed.emit()
+            if value:
+                self._start_global_monitoring()
+            else:
+                self._pdf_watcher_service.stop()
+
+    @property
+    def rag_chatpdf_retention_days(self) -> int:
+        return self._rag_chatpdf_retention_days
+
+    @rag_chatpdf_retention_days.setter
+    def rag_chatpdf_retention_days(self, value: int) -> None:
+        value = max(1, min(90, int(value)))
+        if self._rag_chatpdf_retention_days != value:
+            self._rag_chatpdf_retention_days = value
+            self.settings_changed.emit()
+
+    @property
     def shortcut_definitions(self) -> list[ShortcutDefinition]:
         return DEFAULT_SHORTCUT_DEFINITIONS.copy()
 
@@ -569,6 +634,9 @@ class SettingsViewModel(QObject):
             "rag_enable_query_rewrite": self._rag_enable_query_rewrite,
             "rag_enable_llm_rerank": self._rag_enable_llm_rerank,
             "rag_index_text_artifacts": self._rag_index_text_artifacts,
+            "rag_global_folder": self._rag_global_folder,
+            "rag_global_monitoring_enabled": self._rag_global_monitoring_enabled,
+            "rag_chatpdf_retention_days": self._rag_chatpdf_retention_days,
             "shortcut_bindings": self._shortcut_bindings.copy(),
         }
 
@@ -588,7 +656,7 @@ class SettingsViewModel(QObject):
         self._search_provider = snapshot.get("search_provider", "exa") or "exa"
         self._deep_search_num_results = int(snapshot.get("deep_search_num_results", 5))
         self._rag_enabled = bool(snapshot.get("rag_enabled", False))
-        self._rag_scope = snapshot.get("rag_scope", "session") or "session"
+        self._rag_scope = snapshot.get("rag_scope", "global") or "global"
         self._rag_chunk_size_chars = int(snapshot.get("rag_chunk_size_chars", 1200))
         self._rag_chunk_overlap_chars = int(snapshot.get("rag_chunk_overlap_chars", 150))
         self._rag_k_lex = int(snapshot.get("rag_k_lex", 8))
@@ -607,6 +675,16 @@ class SettingsViewModel(QObject):
         self._rag_index_text_artifacts = bool(
             snapshot.get("rag_index_text_artifacts", False)
         )
+        self._rag_global_folder = snapshot.get(
+            "rag_global_folder",
+            str(Path.home() / "Documents" / "AttractorDeskRAG"),
+        )
+        self._rag_global_monitoring_enabled = bool(
+            snapshot.get("rag_global_monitoring_enabled", False)
+        )
+        self._rag_chatpdf_retention_days = int(
+            snapshot.get("rag_chatpdf_retention_days", 7)
+        )
         shortcuts = snapshot.get("shortcut_bindings", DEFAULT_SHORTCUT_BINDINGS.copy())
         if isinstance(shortcuts, dict):
             self._shortcut_bindings = self._normalize_shortcut_bindings(shortcuts)
@@ -619,6 +697,10 @@ class SettingsViewModel(QObject):
         self.deep_search_toggled.emit(self._deep_search_enabled)
         self.shortcuts_changed.emit()
         self.settings_changed.emit()
+        if self._rag_global_monitoring_enabled:
+            self._start_global_monitoring()
+        else:
+            self._pdf_watcher_service.stop()
 
     def load_settings(self) -> None:
         theme_value = self._settings_repo.get_value(self.KEY_THEME_MODE, ThemeMode.DARK.value)
@@ -633,10 +715,19 @@ class SettingsViewModel(QObject):
         self._default_model = self._settings_repo.get_value(self.KEY_DEFAULT_MODEL, DEFAULT_MODEL)
         self._image_model = self._settings_repo.get_value(self.KEY_IMAGE_MODEL, DEFAULT_IMAGE_MODELS[0])
 
-        # Load API keys from keyring (not SQLite)
+        # Load API keys from keyring, with fallback to SQLite when keyring is unavailable
         self._api_key = self._keyring_service.get_credential("openrouter") or ""
         self._exa_api_key = self._keyring_service.get_credential("exa") or ""
         self._firecrawl_api_key = self._keyring_service.get_credential("firecrawl") or ""
+        if not self._keyring_service.is_available:
+            if not self._api_key:
+                self._api_key = self._settings_repo.get_value(self.KEY_API_KEY, "")
+            if not self._exa_api_key:
+                self._exa_api_key = self._settings_repo.get_value(self.KEY_EXA_API_KEY, "")
+            if not self._firecrawl_api_key:
+                self._firecrawl_api_key = self._settings_repo.get_value(
+                    self.KEY_FIRECRAWL_API_KEY, ""
+                )
 
         model_list = self._settings_repo.get_value(self.KEY_MODEL_LIST, "")
         if model_list:
@@ -663,7 +754,7 @@ class SettingsViewModel(QObject):
 
         # Load RAG settings
         self._rag_enabled = self._settings_repo.get_bool(self.KEY_RAG_ENABLED, False)
-        self._rag_scope = self._settings_repo.get_value(self.KEY_RAG_SCOPE, "session")
+        self._rag_scope = self._settings_repo.get_value(self.KEY_RAG_SCOPE, "global")
         self._rag_chunk_size_chars = self._settings_repo.get_int(self.KEY_RAG_CHUNK_SIZE, 1200)
         self._rag_chunk_overlap_chars = self._settings_repo.get_int(
             self.KEY_RAG_CHUNK_OVERLAP,
@@ -694,6 +785,18 @@ class SettingsViewModel(QObject):
             self.KEY_RAG_INDEX_TEXT,
             False,
         )
+        self._rag_global_folder = self._settings_repo.get_value(
+            self.KEY_RAG_GLOBAL_FOLDER,
+            str(Path.home() / "Documents" / "AttractorDeskRAG"),
+        )
+        self._rag_global_monitoring_enabled = self._settings_repo.get_bool(
+            self.KEY_RAG_GLOBAL_MONITORING,
+            False,
+        )
+        self._rag_chatpdf_retention_days = self._settings_repo.get_int(
+            self.KEY_RAG_CHATPDF_RETENTION_DAYS,
+            7,
+        )
 
         shortcut_data = self._settings_repo.get_value(self.KEY_SHORTCUT_BINDINGS, "")
         if shortcut_data:
@@ -717,6 +820,10 @@ class SettingsViewModel(QObject):
         )
 
         self._saved_state = self.snapshot()
+        if self._rag_global_monitoring_enabled:
+            self._start_global_monitoring()
+        else:
+            self._pdf_watcher_service.stop()
 
     def save_settings(self) -> None:
         try:
@@ -740,13 +847,30 @@ class SettingsViewModel(QObject):
                 str(self._keep_above).lower(),
                 "theme",
             )
-            # Store API keys in keyring (not SQLite)
-            if self._api_key:
-                self._keyring_service.store_credential("openrouter", self._api_key)
-            if self._exa_api_key:
-                self._keyring_service.store_credential("exa", self._exa_api_key)
-            if self._firecrawl_api_key:
-                self._keyring_service.store_credential("firecrawl", self._firecrawl_api_key)
+            # Store API keys in keyring when available; fallback to SQLite in headless mode
+            if self._keyring_service.is_available:
+                if self._api_key:
+                    self._keyring_service.store_credential("openrouter", self._api_key)
+                if self._exa_api_key:
+                    self._keyring_service.store_credential("exa", self._exa_api_key)
+                if self._firecrawl_api_key:
+                    self._keyring_service.store_credential("firecrawl", self._firecrawl_api_key)
+            else:
+                self._settings_repo.set(
+                    self.KEY_API_KEY,
+                    self._api_key,
+                    "models",
+                )
+                self._settings_repo.set(
+                    self.KEY_EXA_API_KEY,
+                    self._exa_api_key,
+                    "deep_search",
+                )
+                self._settings_repo.set(
+                    self.KEY_FIRECRAWL_API_KEY,
+                    self._firecrawl_api_key,
+                    "deep_search",
+                )
             self._settings_repo.set(
                 self.KEY_DEFAULT_MODEL,
                 self._default_model,
@@ -850,6 +974,21 @@ class SettingsViewModel(QObject):
                 "rag",
             )
             self._settings_repo.set(
+                self.KEY_RAG_GLOBAL_FOLDER,
+                self._rag_global_folder,
+                "rag",
+            )
+            self._settings_repo.set(
+                self.KEY_RAG_GLOBAL_MONITORING,
+                str(self._rag_global_monitoring_enabled).lower(),
+                "rag",
+            )
+            self._settings_repo.set(
+                self.KEY_RAG_CHATPDF_RETENTION_DAYS,
+                str(self._rag_chatpdf_retention_days),
+                "rag",
+            )
+            self._settings_repo.set(
                 self.KEY_SHORTCUT_BINDINGS,
                 json.dumps(self._shortcut_bindings),
                 "shortcuts",
@@ -875,6 +1014,91 @@ class SettingsViewModel(QObject):
     def revert_to_saved(self) -> None:
         """Restore values from last saved state."""
         self.restore_snapshot(self._saved_state.copy())
+
+    def start_global_index(self, force_reindex: bool = False) -> None:
+        if not self._rag_global_folder:
+            self.global_rag_error.emit("Global RAG folder is not set")
+            return
+        request = self._build_global_request(force_reindex=force_reindex)
+        self._global_rag_service.index_folder(self._rag_global_folder, request)
+
+    def scan_global_folder(self) -> None:
+        if not self._rag_global_folder:
+            self.global_rag_error.emit("Global RAG folder is not set")
+            return
+        request = self._build_global_request(force_reindex=False)
+        self._global_rag_service.index_folder(self._rag_global_folder, request)
+
+    def list_global_registry_entries(self, status: Optional[str] = None):
+        return self._global_rag_service.get_registry_entries(status=status)
+
+    def get_global_registry_status_counts(self) -> dict[str, int]:
+        return self._global_rag_service.get_registry_status_counts()
+
+    def _build_global_request(self, force_reindex: bool) -> GlobalRagIndexRequest:
+        return GlobalRagIndexRequest(
+            workspace_id=GLOBAL_WORKSPACE_ID,
+            pdf_paths=[],
+            chunk_size_chars=self._rag_chunk_size_chars,
+            chunk_overlap_chars=self._rag_chunk_overlap_chars,
+            embedding_model=self._rag_embedding_model or DEFAULT_EMBEDDING_MODEL,
+            embeddings_enabled=self._rag_enabled and self._rag_k_vec > 0,
+            api_key=self._api_key or None,
+            force_reindex=force_reindex,
+        )
+
+    def _start_global_monitoring(self) -> None:
+        if not self._rag_global_folder:
+            self.global_rag_error.emit("Global RAG folder is not set")
+            return
+        self._pdf_watcher_service.start(self._rag_global_folder)
+
+    def _on_global_pdfs_detected(self, paths: list[str]) -> None:
+        if not paths:
+            return
+        request = self._build_global_request(force_reindex=False)
+        self._global_rag_service.index_paths(
+            GlobalRagIndexRequest(
+                workspace_id=request.workspace_id,
+                pdf_paths=paths,
+                chunk_size_chars=request.chunk_size_chars,
+                chunk_overlap_chars=request.chunk_overlap_chars,
+                embedding_model=request.embedding_model,
+                embeddings_enabled=request.embeddings_enabled,
+                api_key=request.api_key,
+                force_reindex=False,
+            )
+        )
+
+    def _on_global_index_progress(self, current: int, total: int, path: str) -> None:
+        self.global_rag_progress.emit(current, total, path)
+
+    def _on_global_index_complete(self, result: object) -> None:
+        self.global_rag_complete.emit(result)
+        self.global_rag_registry_updated.emit()
+
+    def _on_global_index_error(self, error: str) -> None:
+        self.global_rag_error.emit(error)
+        self.global_rag_registry_updated.emit()
+
+    def cleanup_chatpdf_documents(self) -> int:
+        removed = self._run_chatpdf_cleanup()
+        self.chatpdf_cleanup_complete.emit(removed)
+        return removed
+
+    def _run_chatpdf_cleanup(self) -> int:
+        cutoff = datetime.now() - timedelta(days=self._rag_chatpdf_retention_days)
+        stale_docs = self._rag_repository.list_stale_documents(cutoff)
+        removed = 0
+        for doc in stale_docs:
+            if doc.source_path:
+                try:
+                    Path(doc.source_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            self._rag_repository.delete_document(doc.id)
+            removed += 1
+        return removed
 
     def migrate_legacy_keys(self, legacy_file_path: Optional[Path] = None) -> dict[str, bool]:
         """

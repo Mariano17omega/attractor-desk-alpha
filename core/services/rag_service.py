@@ -35,6 +35,7 @@ class RagIndexRequest:
     source_name: str
     content: str
     source_path: Optional[str] = None
+    file_size: Optional[int] = None
     chunk_size_chars: int = 1200
     chunk_overlap_chars: int = 150
     embedding_model: Optional[str] = None
@@ -291,7 +292,11 @@ class RagService(QObject):
         return _heuristic_rerank(candidates, details_by_id, settings.scope)
 
 
-def _index_document(repository: RagRepository, request: RagIndexRequest) -> RagIndexResult:
+def _index_document(
+    repository: RagRepository,
+    request: RagIndexRequest,
+    embedding_cache: Optional[dict[tuple[str, str, int, int], list[list[float]]]] = None,
+) -> RagIndexResult:
     content_hash = _hash_content(request.content)
     document = None
     if request.artifact_entry_id:
@@ -317,6 +322,7 @@ def _index_document(repository: RagRepository, request: RagIndexRequest) -> RagI
             content_hash=content_hash,
             artifact_entry_id=request.artifact_entry_id,
             source_path=request.source_path,
+            file_size=request.file_size,
         )
     else:
         repository.update_document(
@@ -325,6 +331,7 @@ def _index_document(repository: RagRepository, request: RagIndexRequest) -> RagI
             content_hash=content_hash,
             source_path=request.source_path,
             artifact_entry_id=request.artifact_entry_id,
+            file_size=request.file_size,
         )
 
     chunks = chunk_markdown(
@@ -348,11 +355,33 @@ def _index_document(repository: RagRepository, request: RagIndexRequest) -> RagI
         repository.attach_document_to_session(document.id, request.session_id)
 
     if request.embeddings_enabled and request.embedding_model and chunk_inputs:
-        embedder = OpenRouterEmbeddings(
-            model=request.embedding_model,
-            api_key=request.api_key,
-        )
-        vectors = embedder.embed_texts([chunk.content for chunk in chunk_inputs])
+        cache_key = None
+        vectors: Optional[list[list[float]]] = None
+        if embedding_cache is not None:
+            cache_key = (
+                content_hash,
+                request.embedding_model,
+                request.chunk_size_chars,
+                request.chunk_overlap_chars,
+            )
+            cached = embedding_cache.get(cache_key)
+            if cached is not None and len(cached) == len(chunk_inputs):
+                vectors = cached
+        if vectors is None:
+            embedder = OpenRouterEmbeddings(
+                model=request.embedding_model,
+                api_key=request.api_key,
+            )
+            unique_texts: list[str] = []
+            unique_index: dict[str, int] = {}
+            for chunk in chunk_inputs:
+                if chunk.content not in unique_index:
+                    unique_index[chunk.content] = len(unique_texts)
+                    unique_texts.append(chunk.content)
+            unique_vectors = embedder.embed_texts(unique_texts)
+            vectors = [unique_vectors[unique_index[chunk.content]] for chunk in chunk_inputs]
+            if cache_key is not None:
+                embedding_cache[cache_key] = vectors
         embeddings = [
             RagEmbeddingInput(
                 chunk_id=chunk.id,

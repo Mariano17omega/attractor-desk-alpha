@@ -149,6 +149,14 @@ class OpenCanvasState(BaseModel):
     # RAG state
     rag_enabled: Optional[bool] = None
     rag_scope: Optional[str] = None
+    conversation_mode: Optional[str] = Field(
+        default="normal",
+        alias="conversationMode",
+    )
+    active_pdf_document_id: Optional[str] = Field(
+        default=None,
+        alias="activePdfDocumentId",
+    )
     rag_query: Optional[str] = None
     rag_queries: Optional[list[str]] = None
     rag_should_retrieve: Optional[bool] = None
@@ -158,6 +166,8 @@ class OpenCanvasState(BaseModel):
     rag_grounded: Optional[bool] = None
     rag_retrieval_debug: Optional[dict] = None
     rag_selected_chunk_ids: Optional[list[str]] = None
+    rag_used: Optional[str] = None
+    rag_route_debug: Optional[dict] = None
     
     class Config:
         arbitrary_types_allowed = True

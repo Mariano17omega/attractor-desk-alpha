@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 from PySide6.QtCore import QObject, QThread, Signal
 
@@ -25,6 +25,47 @@ class PdfConversionResult:
     error_message: str = ""
 
 
+def convert_pdf_to_markdown(pdf_path: str) -> PdfConversionResult:
+    """Convert a PDF file to Markdown synchronously."""
+    source_filename = Path(pdf_path).stem
+    try:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_ocr = True
+        pipeline_options.do_table_structure = True
+
+        converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            }
+        )
+
+        result = converter.convert(pdf_path)
+        markdown = result.document.export_to_markdown()
+        return PdfConversionResult(
+            success=True,
+            markdown=markdown,
+            source_filename=source_filename,
+        )
+    except ImportError as e:
+        logger.error("Docling not installed: %s", e)
+        return PdfConversionResult(
+            success=False,
+            source_filename=source_filename,
+            error_message="Docling is not installed. Install with: pip install docling",
+        )
+    except Exception as e:
+        logger.exception("PDF conversion failed: %s", e)
+        return PdfConversionResult(
+            success=False,
+            source_filename=source_filename,
+            error_message=f"PDF conversion failed: {e}",
+        )
+
+
 class _ConversionWorker(QObject):
     """Worker that runs Docling conversion in a background thread."""
 
@@ -36,48 +77,7 @@ class _ConversionWorker(QObject):
 
     def run(self) -> None:
         """Perform the PDF conversion using Docling."""
-        source_filename = Path(self._pdf_path).stem
-        try:
-            # Import docling here to handle optional dependency gracefully
-            from docling.datamodel.base_models import InputFormat
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
-            from docling.document_converter import DocumentConverter, PdfFormatOption
-
-            # Configure pipeline for robust layout handling
-            # do_ocr=True helps significantly with multi-column PDFs where
-            # the internal text stream order is messed up or creates single-char lines
-            pipeline_options = PdfPipelineOptions()
-            pipeline_options.do_ocr = True
-            pipeline_options.do_table_structure = True
-
-            converter = DocumentConverter(
-                format_options={
-                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
-                }
-            )
-
-            result = converter.convert(self._pdf_path)
-            markdown = result.document.export_to_markdown()
-
-            self.finished.emit(PdfConversionResult(
-                success=True,
-                markdown=markdown,
-                source_filename=source_filename,
-            ))
-        except ImportError as e:
-            logger.error("Docling not installed: %s", e)
-            self.finished.emit(PdfConversionResult(
-                success=False,
-                source_filename=source_filename,
-                error_message="Docling is not installed. Install with: pip install docling",
-            ))
-        except Exception as e:
-            logger.exception("PDF conversion failed: %s", e)
-            self.finished.emit(PdfConversionResult(
-                success=False,
-                source_filename=source_filename,
-                error_message=f"PDF conversion failed: {e}",
-            ))
+        self.finished.emit(convert_pdf_to_markdown(self._pdf_path))
 
 
 class DoclingService(QObject):

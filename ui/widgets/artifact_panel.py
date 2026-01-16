@@ -36,6 +36,7 @@ from core.types import (
     ProgrammingLanguageOptions,
 )
 from ui.viewmodels.chat_viewmodel import ChatViewModel
+from ui.widgets.pdf_viewer_widget import PdfViewerWidget
 
 
 class CodeEditor(QPlainTextEdit):
@@ -85,6 +86,7 @@ class ArtifactPanel(QWidget):
         self._collection: Optional[ArtifactCollectionV1] = None
         self._text_count = 0
         self._code_count = 0
+        self._pdf_count = 0
         self._is_editing = False
         self._original_content = ""  # For cancel/revert
         self._is_renaming = False  # For title rename mode
@@ -231,6 +233,10 @@ class ArtifactPanel(QWidget):
         self.raw_text_editor.setFont(font)
         self.content_stack.addWidget(self.raw_text_editor)
 
+        # PDF viewer (index 3)
+        self.pdf_viewer = PdfViewerWidget()
+        self.content_stack.addWidget(self.pdf_viewer)
+
         content_layout.addWidget(self.content_stack)
         layout.addWidget(self.content_frame, stretch=1)
 
@@ -296,6 +302,7 @@ class ArtifactPanel(QWidget):
 
         # Connect to view model
         self.view_model.artifact_changed.connect(self._on_artifact_changed)
+        self.pdf_viewer.page_changed.connect(self._on_pdf_page_changed)
 
     def _show_placeholder(self):
         """Show the empty state placeholder."""
@@ -339,6 +346,9 @@ class ArtifactPanel(QWidget):
                 if current_content.type == "code":
                     self._code_count += 1
                     tab_label = f"Code_{self._code_count}"
+                elif current_content.type == "pdf":
+                    self._pdf_count += 1
+                    tab_label = f"PDF_{self._pdf_count}"
                 else:
                     self._text_count += 1
                     tab_label = f"Art_{self._text_count}"
@@ -507,10 +517,34 @@ class ArtifactPanel(QWidget):
             self.type_label.setText(f"💻 Code • {lang_value.title()}")
             self.code_editor.setPlainText(current_content.code)
             self.content_stack.setCurrentIndex(1)  # Show code view
+        elif current_content.type == "pdf":
+            self.type_label.setText("📄 PDF Document")
+            self.pdf_viewer.load_pdf(current_content.pdf_path)
+            self.pdf_viewer.set_page(max(0, current_content.current_page - 1))
+            self.pdf_viewer.set_status("Ready")
+            self.content_stack.setCurrentIndex(3)  # Show PDF view
         else:
             self.type_label.setText("📝 Text Document")
             self.markdown_viewer.setMarkdown(current_content.full_markdown)
             self.content_stack.setCurrentIndex(0)  # Show text view
+
+        if self._collection and self._collection.active_artifact_id:
+            self.view_model.on_artifact_selected(self._collection.active_artifact_id)
+
+    def _on_pdf_page_changed(self, page_index: int) -> None:
+        if not self._collection:
+            return
+        active_entry = self._collection.get_active_entry()
+        if not active_entry or not active_entry.artifact.contents:
+            return
+        current_content = active_entry.artifact.contents[-1]
+        if current_content.type != "pdf":
+            return
+        current_content.current_page = page_index + 1
+        session_id = self.view_model.current_session_id
+        if session_id:
+            self.view_model._artifact_repository.save_collection(session_id, self._collection)
+        self.view_model._artifact = active_entry.artifact
 
     def _start_edit_mode(self):
         """Enter edit mode for the current text artifact."""

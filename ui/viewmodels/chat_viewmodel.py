@@ -22,12 +22,18 @@ from core.persistence import (
 )
 from core.services.docling_service import DoclingService, PdfConversionResult
 from core.services.rag_service import RagIndexRequest, RagService
+from core.services.local_rag_service import (
+    LocalRagService,
+    LocalRagIndexRequest,
+    LocalRagIndexResult,
+)
 from core.types import (
     ArtifactCollectionV1,
     ArtifactEntry,
     ArtifactExportMeta,
     ArtifactCodeV3,
     ArtifactMarkdownV3,
+    ArtifactPdfV1,
     ArtifactV3,
 )
 from ui.viewmodels.settings_viewmodel import SettingsViewModel
@@ -73,6 +79,7 @@ class ChatViewModel(QObject):
     error_occurred = Signal(str)
     session_updated = Signal()
     pdf_import_status = Signal(str)  # Emits status updates for PDF import
+    chatpdf_status = Signal(str)  # Emits status updates for ChatPDF indexing
     pending_attachments_changed = Signal(object)
 
     def __init__(
@@ -83,6 +90,7 @@ class ChatViewModel(QObject):
         session_repository: SessionRepository,
         settings_viewmodel: SettingsViewModel,
         rag_service: Optional[RagService] = None,
+        local_rag_service: Optional[LocalRagService] = None,
         parent: Optional[QObject] = None,
     ):
         super().__init__(parent)
@@ -92,6 +100,7 @@ class ChatViewModel(QObject):
         self._session_repository = session_repository
         self._settings_viewmodel = settings_viewmodel
         self._rag_service = rag_service
+        self._local_rag_service = local_rag_service
 
         self._messages: list[BaseMessage] = []
         self._internal_messages: list[BaseMessage] = []
@@ -108,6 +117,13 @@ class ChatViewModel(QObject):
         self._docling_service = DoclingService(self)
         self._docling_service.conversion_complete.connect(self._on_pdf_conversion_complete)
         self._pending_pdf_path: Optional[str] = None
+        self._pending_chatpdf_path: Optional[str] = None
+        self._conversation_mode: str = "normal"
+        self._active_pdf_document_id: Optional[str] = None
+
+        if self._local_rag_service:
+            self._local_rag_service.index_complete.connect(self._on_chatpdf_index_complete)
+            self._local_rag_service.index_error.connect(self._on_chatpdf_index_error)
 
         self._settings: dict = {
             "model": "anthropic/claude-3.5-sonnet",
@@ -168,6 +184,8 @@ class ChatViewModel(QObject):
         self.is_loading_changed.emit(loading)
 
     def load_session(self, session_id: str) -> None:
+        if self._current_session and self._local_rag_service:
+            self._local_rag_service.mark_session_stale(self._current_session.id)
         session = self._session_repository.get_by_id(session_id)
         if session is None:
             return
@@ -181,7 +199,9 @@ class ChatViewModel(QObject):
             elif message.role == MessageRole.ASSISTANT:
                 self._messages.append(AIMessage(content=message.content))
         self._internal_messages = self._messages.copy()
-        self._artifact = self._artifact_repository.get_for_session(session_id)
+        collection = self._artifact_repository.get_collection(session_id)
+        self._artifact = collection.get_active_artifact() if collection else None
+        self._update_conversation_mode_from_collection(collection)
         self.messages_loaded.emit(
             [
                 {"content": msg.content, "is_user": isinstance(msg, HumanMessage)}
@@ -191,10 +211,14 @@ class ChatViewModel(QObject):
         self.artifact_changed.emit()
 
     def clear(self) -> None:
+        if self._current_session and self._local_rag_service:
+            self._local_rag_service.mark_session_stale(self._current_session.id)
         self._messages = []
         self._internal_messages = []
         self._artifact = None
         self._current_session = None
+        self._conversation_mode = "normal"
+        self._active_pdf_document_id = None
         self._clear_pending_attachments()
         self.messages_loaded.emit([])
         self.artifact_changed.emit()
@@ -268,6 +292,8 @@ class ChatViewModel(QObject):
             "messages": self._messages.copy(),
             "internal_messages": internal_messages,
             "web_search_enabled": self._settings_viewmodel.deep_search_enabled,
+            "conversation_mode": self._conversation_mode,
+            "active_pdf_document_id": self._active_pdf_document_id,
         }
         
         if self._artifact:
@@ -298,6 +324,8 @@ class ChatViewModel(QObject):
                 "rag_embedding_model": self._settings_viewmodel.rag_embedding_model,
                 "rag_enable_query_rewrite": self._settings_viewmodel.rag_enable_query_rewrite,
                 "rag_enable_llm_rerank": self._settings_viewmodel.rag_enable_llm_rerank,
+                "conversation_mode": self._conversation_mode,
+                "active_pdf_document_id": self._active_pdf_document_id,
                 "web_search_provider": self._settings_viewmodel.search_provider,
                 "web_search_num_results": self._settings_viewmodel.deep_search_num_results,
                 "exa_api_key": exa_api_key or None,
@@ -566,3 +594,126 @@ class ChatViewModel(QObject):
             api_key=self._settings_viewmodel.api_key or None,
         )
         self._rag_service.index_artifact(request)
+
+    @Slot(str)
+    def open_chatpdf(self, pdf_path: str) -> None:
+        if not self._current_session:
+            self.error_occurred.emit("No active session for ChatPDF")
+            return
+        if not self._local_rag_service:
+            self.error_occurred.emit("ChatPDF service unavailable")
+            return
+        if self._local_rag_service.is_busy():
+            self.error_occurred.emit("A ChatPDF indexing job is already in progress")
+            return
+        self.chatpdf_status.emit(f"Indexing PDF: {pdf_path}")
+        self._pending_chatpdf_path = pdf_path
+        request = LocalRagIndexRequest(
+            workspace_id=self._current_session.workspace_id,
+            session_id=self._current_session.id,
+            pdf_path=pdf_path,
+            chunk_size_chars=self._settings_viewmodel.rag_chunk_size_chars,
+            chunk_overlap_chars=self._settings_viewmodel.rag_chunk_overlap_chars,
+            embedding_model=self._settings_viewmodel.rag_embedding_model
+            or DEFAULT_EMBEDDING_MODEL,
+            embeddings_enabled=self._settings_viewmodel.rag_enabled
+            and self._settings_viewmodel.rag_k_vec > 0,
+            api_key=self._settings_viewmodel.api_key or None,
+        )
+        self._local_rag_service.index_pdf(request)
+
+    def _on_chatpdf_index_complete(self, result: LocalRagIndexResult) -> None:
+        if not result.success:
+            self.error_occurred.emit(result.error_message)
+            self.chatpdf_status.emit("")
+            return
+        if not self._current_session:
+            self.error_occurred.emit("No active session")
+            self.chatpdf_status.emit("")
+            return
+
+        pdf_title = Path(result.saved_path).stem if result.saved_path else "PDF"
+        pdf_content = ArtifactPdfV1(
+            index=1,
+            type="pdf",
+            title=pdf_title,
+            pdfPath=result.saved_path or "",
+            totalPages=None,
+            currentPage=1,
+            ragDocumentId=result.document_id,
+        )
+        new_artifact = ArtifactV3(
+            currentIndex=1,
+            contents=[pdf_content],
+        )
+        entry = ArtifactEntry(
+            id=str(uuid4()),
+            artifact=new_artifact,
+            export_meta=ArtifactExportMeta(),
+        )
+
+        collection = self._artifact_repository.get_collection(self._current_session.id)
+        if collection is None:
+            collection = ArtifactCollectionV1(
+                version=1,
+                artifacts=[entry],
+                active_artifact_id=entry.id,
+            )
+        else:
+            collection.artifacts.append(entry)
+            collection.active_artifact_id = entry.id
+
+        self._artifact_repository.save_collection(self._current_session.id, collection)
+        self._artifact = new_artifact
+        self._conversation_mode = "chatpdf"
+        self._active_pdf_document_id = result.document_id
+        self.artifact_changed.emit()
+        self.chatpdf_status.emit(f"ChatPDF ready: {pdf_title}")
+        self._pending_chatpdf_path = None
+
+    def _on_chatpdf_index_error(self, error: str) -> None:
+        self.error_occurred.emit(error)
+        self.chatpdf_status.emit("")
+
+    def on_artifact_selected(self, artifact_id: str) -> None:
+        if not self._current_session:
+            return
+        collection = self._artifact_repository.get_collection(self._current_session.id)
+        if not collection:
+            return
+        for entry in collection.artifacts:
+            if entry.id != artifact_id:
+                continue
+            if entry.artifact.contents:
+                current_content = entry.artifact.contents[-1]
+                if current_content.type == "pdf":
+                    self._conversation_mode = "chatpdf"
+                    self._active_pdf_document_id = getattr(
+                        current_content, "rag_document_id", None
+                    )
+                else:
+                    self._conversation_mode = "normal"
+                    self._active_pdf_document_id = None
+            break
+
+    def _update_conversation_mode_from_collection(
+        self, collection: Optional[ArtifactCollectionV1]
+    ) -> None:
+        if not collection:
+            self._conversation_mode = "normal"
+            self._active_pdf_document_id = None
+            return
+        active_entry = collection.get_active_entry()
+        if not active_entry or not active_entry.artifact.contents:
+            self._conversation_mode = "normal"
+            self._active_pdf_document_id = None
+            return
+        current_content = active_entry.artifact.contents[-1]
+        if current_content.type == "pdf":
+            self._conversation_mode = "chatpdf"
+            self._active_pdf_document_id = getattr(
+                current_content, "rag_document_id", None
+            )
+        else:
+            self._conversation_mode = "normal"
+            self._active_pdf_document_id = None

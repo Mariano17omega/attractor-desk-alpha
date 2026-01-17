@@ -91,14 +91,20 @@ class _IndexWorker(QObject):
     finished = Signal(object)
     error = Signal(str)
 
-    def __init__(self, repository: RagRepository, request: RagIndexRequest):
+    def __init__(
+        self,
+        repository: RagRepository,
+        request: RagIndexRequest,
+        chroma_service: Optional["ChromaService"] = None,
+    ):
         super().__init__()
         self._repository = repository
         self._request = request
+        self._chroma_service = chroma_service
 
     def run(self) -> None:
         try:
-            result = _index_document(self._repository, self._request)
+            result = _index_document(self._repository, self._request, self._chroma_service)
             self.finished.emit(result)
         except Exception as exc:
             logger.exception("RAG indexing failed")
@@ -111,9 +117,15 @@ class RagService(QObject):
     index_complete = Signal(object)
     index_error = Signal(str)
 
-    def __init__(self, repository: RagRepository, parent: Optional[QObject] = None):
+    def __init__(
+        self,
+        repository: RagRepository,
+        chroma_service: Optional["ChromaService"] = None,
+        parent: Optional[QObject] = None,
+    ):
         super().__init__(parent)
         self._repository = repository
+        self._chroma_service = chroma_service
         self._thread: Optional[QThread] = None
         self._worker: Optional[_IndexWorker] = None
 
@@ -122,7 +134,7 @@ class RagService(QObject):
             self.index_error.emit("RAG indexing already in progress")
             return
         self._thread = QThread()
-        self._worker = _IndexWorker(self._repository, request)
+        self._worker = _IndexWorker(self._repository, request, self._chroma_service)
         self._worker.moveToThread(self._thread)
 
         self._thread.started.connect(self._worker.run)
@@ -252,6 +264,39 @@ class RagService(QObject):
         k_vec: int,
         api_key: Optional[str],
     ) -> list[tuple[str, float]]:
+        """Perform vector similarity search using ChromaDB or fallback to manual search.
+
+        If ChromaService is available, uses fast HNSW-based search.
+        Otherwise, falls back to manual O(n) cosine similarity computation.
+        """
+        # Generate query embedding
+        embedder = OpenRouterEmbeddings(model=model, api_key=api_key)
+        query_vector = embedder.embed_text(query)
+        if not query_vector:
+            return []
+
+        # Try ChromaDB first (100x+ faster for large collections)
+        if self._chroma_service is not None:
+            try:
+                # Build metadata filter for scope
+                # Note: ChromaDB doesn't support None in metadata, use empty string for Global RAG
+                where_filter = {"workspace_id": workspace_id}
+                if scope == "session" and session_id:
+                    where_filter["session_id"] = session_id
+                else:
+                    # Global RAG: session_id is stored as empty string
+                    where_filter["session_id"] = ""
+
+                results = self._chroma_service.query_similar(
+                    query_vector=query_vector,
+                    where=where_filter,
+                    k=k_vec,
+                )
+                return results
+            except Exception as exc:
+                logger.warning(f"ChromaDB query failed, falling back to manual search: {exc}")
+
+        # Fallback: Manual O(n) search (slow for large collections)
         embeddings = self._repository.get_embeddings_for_scope(
             scope=scope,
             workspace_id=workspace_id,
@@ -260,13 +305,11 @@ class RagService(QObject):
         )
         if not embeddings:
             return []
-        embedder = OpenRouterEmbeddings(model=model, api_key=api_key)
-        query_vector = embedder.embed_text(query)
-        if not query_vector:
-            return []
+
         query_norm = _vector_norm(query_vector)
         if query_norm == 0:
             return []
+
         scored: list[tuple[str, float]] = []
         for chunk_id, blob, dims in embeddings:
             vector = _blob_to_float_list(blob)
@@ -274,6 +317,7 @@ class RagService(QObject):
                 continue
             score = _cosine_similarity(query_vector, vector, query_norm)
             scored.append((chunk_id, score))
+
         scored.sort(key=lambda item: item[1], reverse=True)
         return scored[:k_vec]
 
@@ -314,6 +358,7 @@ def _needs_embedding_retry(document, request: RagIndexRequest) -> bool:
 def _index_document(
     repository: RagRepository,
     request: RagIndexRequest,
+    chroma_service: Optional["ChromaService"] = None,
     embedding_cache: Optional[dict[tuple[str, str, int, int], list[list[float]]]] = None,
 ) -> RagIndexResult:
     content_hash = _hash_content(request.content)
@@ -426,6 +471,28 @@ def _index_document(
                 if len(embeddings) != len(chunk_inputs):
                     raise ValueError("Embedding count mismatch")
                 repository.upsert_embeddings(embeddings)
+
+                # Also add to ChromaDB for fast retrieval (if available)
+                if chroma_service is not None:
+                    try:
+                        chunk_metadata = [
+                            {
+                                "chunk_id": chunk.id,
+                                "document_id": document.id,
+                                "workspace_id": request.workspace_id,
+                                "session_id": request.session_id or "",  # ChromaDB doesn't support None in metadata
+                            }
+                            for chunk in chunk_inputs
+                        ]
+                        chroma_service.add_embeddings(
+                            chunk_ids=[c.id for c in chunk_inputs],
+                            vectors=vectors,
+                            metadata=chunk_metadata,
+                        )
+                        logger.debug(f"Added {len(chunk_inputs)} vectors to ChromaDB for document {document.id}")
+                    except Exception as exc:
+                        logger.warning(f"Failed to add embeddings to ChromaDB (non-fatal): {exc}")
+
                 embedding_status = EMBEDDING_STATUS_INDEXED
             except Exception as exc:
                 embedding_status = EMBEDDING_STATUS_FAILED

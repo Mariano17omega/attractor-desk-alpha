@@ -25,7 +25,7 @@ from core.persistence import (
     SessionRepository,
     WorkspaceRepository,
 )
-from core.services import ModelCapabilitiesService, RagService, LocalRagService
+from core.services import ModelCapabilitiesService, RagService, LocalRagService, ChromaService
 from ui.styles import get_dark_theme_stylesheet, get_light_theme_stylesheet
 from ui.services.screen_capture_service import ScreenCaptureService
 from ui.viewmodels.chat_viewmodel import ChatViewModel
@@ -46,15 +46,19 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self._database = Database()
-        self._settings_viewmodel = SettingsViewModel(settings_db=self._database)
+        self._chroma_service = ChromaService()
+        self._settings_viewmodel = SettingsViewModel(
+            settings_db=self._database,
+            chroma_service=self._chroma_service,
+        )
         self._workspace_repository = WorkspaceRepository(self._database)
         self._session_repository = SessionRepository(self._database)
         self._message_repository = MessageRepository(self._database)
         self._attachment_repository = MessageAttachmentRepository(self._database)
         self._artifact_repository = ArtifactRepository(self._database)
         self._rag_repository = RagRepository(self._database)
-        self._rag_service = RagService(self._rag_repository)
-        self._local_rag_service = LocalRagService(self._rag_repository)
+        self._rag_service = RagService(self._rag_repository, self._chroma_service)
+        self._local_rag_service = LocalRagService(self._rag_repository, self._chroma_service)
         self._capture_service = ScreenCaptureService()
         self._model_capabilities = ModelCapabilitiesService()
         self._shortcuts: dict[str, QShortcut] = {}

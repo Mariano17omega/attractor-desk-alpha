@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,8 @@ from core.models import ShortcutDefinition, ThemeMode
 from core.persistence import Database, SettingsRepository, RagRepository
 from core.persistence.rag_repository import GLOBAL_WORKSPACE_ID
 from core.services import GlobalRagService, GlobalRagIndexRequest, PdfWatcherService
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_MODELS = [
@@ -149,6 +152,7 @@ class SettingsViewModel(QObject):
         self,
         settings_db: Optional[Database] = None,
         keyring_service: Optional[KeyringService] = None,
+        chroma_service: Optional["ChromaService"] = None,
         parent: Optional[QObject] = None,
     ):
         super().__init__(parent)
@@ -191,8 +195,9 @@ class SettingsViewModel(QObject):
         self._artifact_panel_visible: bool = False
 
         self._saved_state: dict[str, object] = {}
+        self._chroma_service = chroma_service
         self._rag_repository = RagRepository(self._settings_db)
-        self._global_rag_service = GlobalRagService(self._rag_repository, self)
+        self._global_rag_service = GlobalRagService(self._rag_repository, chroma_service, self)
         self._global_rag_service.index_progress.connect(self._on_global_index_progress)
         self._global_rag_service.index_complete.connect(self._on_global_index_complete)
         self._global_rag_service.index_error.connect(self._on_global_index_error)
@@ -1096,7 +1101,17 @@ class SettingsViewModel(QObject):
                     Path(doc.source_path).unlink(missing_ok=True)
                 except OSError:
                     pass
+
+            # Delete from SQLite
             self._rag_repository.delete_document(doc.id)
+
+            # Also delete from ChromaDB (if available)
+            if self._chroma_service is not None:
+                try:
+                    self._chroma_service.delete_by_document(doc.id)
+                except Exception as exc:
+                    logger.warning(f"Failed to delete document {doc.id} from ChromaDB: {exc}")
+
             removed += 1
         return removed
 

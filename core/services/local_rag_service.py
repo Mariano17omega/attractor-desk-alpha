@@ -48,10 +48,16 @@ class _LocalIndexWorker(QObject):
     finished = Signal(object)
     error = Signal(str)
 
-    def __init__(self, repository: RagRepository, request: LocalRagIndexRequest):
+    def __init__(
+        self,
+        repository: RagRepository,
+        request: LocalRagIndexRequest,
+        chroma_service: Optional["ChromaService"] = None,
+    ):
         super().__init__()
         self._repository = repository
         self._request = request
+        self._chroma_service = chroma_service
 
     def run(self) -> None:
         try:
@@ -94,7 +100,7 @@ class _LocalIndexWorker(QObject):
             embeddings_enabled=self._request.embeddings_enabled,
             api_key=self._request.api_key,
         )
-        index_result = _index_document(self._repository, request)
+        index_result = _index_document(self._repository, request, self._chroma_service)
         if not index_result.success:
             return LocalRagIndexResult(
                 success=False,
@@ -116,9 +122,15 @@ class LocalRagService(QObject):
     index_complete = Signal(object)
     index_error = Signal(str)
 
-    def __init__(self, repository: RagRepository, parent: Optional[QObject] = None):
+    def __init__(
+        self,
+        repository: RagRepository,
+        chroma_service: Optional["ChromaService"] = None,
+        parent: Optional[QObject] = None,
+    ):
         super().__init__(parent)
         self._repository = repository
+        self._chroma_service = chroma_service
         self._thread: Optional[QThread] = None
         self._worker: Optional[_LocalIndexWorker] = None
 
@@ -127,7 +139,7 @@ class LocalRagService(QObject):
             self.index_error.emit("ChatPDF indexing already in progress")
             return
         self._thread = QThread()
-        self._worker = _LocalIndexWorker(self._repository, request)
+        self._worker = _LocalIndexWorker(self._repository, request, self._chroma_service)
         self._worker.moveToThread(self._thread)
 
         self._thread.started.connect(self._worker.run)
@@ -154,7 +166,17 @@ class LocalRagService(QObject):
                     Path(doc.source_path).unlink(missing_ok=True)
                 except OSError as exc:
                     logger.warning("Failed to delete %s: %s", doc.source_path, exc)
+
+            # Delete from SQLite
             self._repository.delete_document(doc.id)
+
+            # Also delete from ChromaDB (if available)
+            if self._chroma_service is not None:
+                try:
+                    self._chroma_service.delete_by_document(doc.id)
+                except Exception as exc:
+                    logger.warning(f"Failed to delete document {doc.id} from ChromaDB: {exc}")
+
             removed += 1
         return removed
 

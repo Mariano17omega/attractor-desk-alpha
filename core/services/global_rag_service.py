@@ -53,10 +53,16 @@ class _GlobalIndexWorker(QObject):
     finished = Signal(object)
     error = Signal(str)
 
-    def __init__(self, repository: RagRepository, request: GlobalRagIndexRequest):
+    def __init__(
+        self,
+        repository: RagRepository,
+        request: GlobalRagIndexRequest,
+        chroma_service: Optional["ChromaService"] = None,
+    ):
         super().__init__()
         self._repository = repository
         self._request = request
+        self._chroma_service = chroma_service
         self._embedding_cache: dict[tuple[str, str, int, int], list[list[float]]] = {}
         self._markdown_cache: dict[str, str] = {}
 
@@ -258,6 +264,7 @@ class _GlobalIndexWorker(QObject):
         index_result = _index_document(
             self._repository,
             request,
+            self._chroma_service,
             embedding_cache=self._embedding_cache,
         )
         if index_result.success:
@@ -297,9 +304,15 @@ class GlobalRagService(QObject):
     index_complete = Signal(object)
     index_error = Signal(str)
 
-    def __init__(self, repository: RagRepository, parent: Optional[QObject] = None):
+    def __init__(
+        self,
+        repository: RagRepository,
+        chroma_service: Optional["ChromaService"] = None,
+        parent: Optional[QObject] = None,
+    ):
         super().__init__(parent)
         self._repository = repository
+        self._chroma_service = chroma_service
         self._thread: Optional[QThread] = None
         self._worker: Optional[_GlobalIndexWorker] = None
 
@@ -308,7 +321,7 @@ class GlobalRagService(QObject):
             self.index_error.emit("Global RAG indexing already in progress")
             return
         self._thread = QThread()
-        self._worker = _GlobalIndexWorker(self._repository, request)
+        self._worker = _GlobalIndexWorker(self._repository, request, self._chroma_service)
         self._worker.moveToThread(self._thread)
 
         self._thread.started.connect(self._worker.run)

@@ -3,9 +3,12 @@ Reflections/memory formatting utilities.
 Matches the original TypeScript formatReflections function.
 """
 
+import logging
 from typing import Optional
 
 from core.types import Reflections
+
+logger = logging.getLogger(__name__)
 
 
 def format_reflections(
@@ -37,7 +40,7 @@ def format_reflections(
             import json
             style_rules = json.loads(style_rules)
         except (json.JSONDecodeError, TypeError):
-            print(f"Warning: Failed to parse style rules: {style_rules}")
+            logger.warning("Failed to parse style rules: %s", style_rules)
             style_rules = []
     
     style_rules_str = "\n- ".join(style_rules) if style_rules else "No style guidelines found."
@@ -49,7 +52,7 @@ def format_reflections(
             import json
             content_rules = json.loads(content_rules)
         except (json.JSONDecodeError, TypeError):
-            print(f"Warning: Failed to parse content rules: {content_rules}")
+            logger.warning("Failed to parse content rules: %s", content_rules)
             content_rules = []
     
     content_rules_str = "\n- ".join(content_rules) if content_rules else "No memories/facts found."

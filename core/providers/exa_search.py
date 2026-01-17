@@ -3,10 +3,13 @@ Exa search provider implementation.
 Optional - fails gracefully if API key is not configured.
 """
 
+import logging
 from typing import Optional
 
 from core.config import get_exa_api_key, is_web_search_enabled
 from core.providers.search import SearchProvider, SearchResult
+
+logger = logging.getLogger(__name__)
 
 
 class ExaSearchProvider(SearchProvider):
@@ -68,7 +71,7 @@ class ExaSearchProvider(SearchProvider):
             List of search results
         """
         if not self.is_available:
-            print("Warning: Exa search not available, returning empty results")
+            logger.warning("Exa search not available, returning empty results")
             return []
         
         try:
@@ -96,7 +99,7 @@ class ExaSearchProvider(SearchProvider):
             return results
             
         except Exception as e:
-            print(f"Exa search error: {e}")
+            logger.warning("Exa search error: %s", e)
             return []
     
     def search_sync(
@@ -110,7 +113,7 @@ class ExaSearchProvider(SearchProvider):
         The Exa client is synchronous, so we override the default async implementation.
         """
         if not self.is_available:
-            print("Warning: Exa search not available, returning empty results")
+            logger.warning("Exa search not available, returning empty results")
             return []
         
         try:
@@ -137,7 +140,7 @@ class ExaSearchProvider(SearchProvider):
             return results
             
         except Exception as e:
-            print(f"Exa search error: {e}")
+            logger.warning("Exa search error: %s", e)
             return []
 
 

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import re
 from typing import Iterable, Optional
 import uuid
 
 from .database import Database
 
 GLOBAL_WORKSPACE_ID = "GLOBAL"
+_FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,9 @@ class RagDocument:
     content_hash: str
     indexed_at: Optional[datetime]
     file_size: Optional[int]
+    embedding_status: str
+    embedding_model: Optional[str]
+    embedding_error: Optional[str]
     stale_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
@@ -93,6 +98,8 @@ class RagIndexRegistryEntry:
     last_indexed_at: Optional[datetime]
     error_message: Optional[str]
     embedding_model: Optional[str]
+    embedding_status: Optional[str]
+    embedding_error: Optional[str]
 
 
 class RagRepository:
@@ -110,6 +117,9 @@ class RagRepository:
         artifact_entry_id: Optional[str] = None,
         source_path: Optional[str] = None,
         file_size: Optional[int] = None,
+        embedding_status: str = "disabled",
+        embedding_model: Optional[str] = None,
+        embedding_error: Optional[str] = None,
         indexed_at: Optional[datetime] = None,
         stale_at: Optional[datetime] = None,
     ) -> RagDocument:
@@ -130,10 +140,13 @@ class RagRepository:
                 content_hash,
                 indexed_at,
                 file_size,
+                embedding_status,
+                embedding_model,
+                embedding_error,
                 stale_at,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,
@@ -145,6 +158,9 @@ class RagRepository:
                 content_hash,
                 indexed_at_value.isoformat(),
                 file_size,
+                embedding_status,
+                embedding_model,
+                embedding_error,
                 stale_at_value,
                 now.isoformat(),
                 now.isoformat(),
@@ -161,6 +177,9 @@ class RagRepository:
             content_hash=content_hash,
             indexed_at=indexed_at_value,
             file_size=file_size,
+            embedding_status=embedding_status,
+            embedding_model=embedding_model,
+            embedding_error=embedding_error,
             stale_at=stale_at,
             created_at=now,
             updated_at=now,
@@ -202,12 +221,41 @@ class RagRepository:
         )
         conn.commit()
 
+    def update_document_embedding_status(
+        self,
+        document_id: str,
+        embedding_status: str,
+        embedding_model: Optional[str] = None,
+        embedding_error: Optional[str] = None,
+    ) -> None:
+        conn = self._db.get_connection()
+        now = datetime.now().isoformat()
+        conn.execute(
+            """
+            UPDATE rag_documents
+            SET embedding_status = ?,
+                embedding_model = ?,
+                embedding_error = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                embedding_status,
+                embedding_model,
+                embedding_error,
+                now,
+                document_id,
+            ),
+        )
+        conn.commit()
+
     def get_document(self, document_id: str) -> Optional[RagDocument]:
         conn = self._db.get_connection()
         cursor = conn.execute(
             """
             SELECT id, workspace_id, artifact_entry_id, source_type, source_name, source_path,
-                   content_hash, indexed_at, file_size, stale_at, created_at, updated_at
+                   content_hash, indexed_at, file_size, embedding_status, embedding_model,
+                   embedding_error, stale_at, created_at, updated_at
             FROM rag_documents
             WHERE id = ?
             """,
@@ -227,7 +275,8 @@ class RagRepository:
         cursor = conn.execute(
             """
             SELECT id, workspace_id, artifact_entry_id, source_type, source_name, source_path,
-                   content_hash, indexed_at, file_size, stale_at, created_at, updated_at
+                   content_hash, indexed_at, file_size, embedding_status, embedding_model,
+                   embedding_error, stale_at, created_at, updated_at
             FROM rag_documents
             WHERE workspace_id = ? AND artifact_entry_id = ?
             """,
@@ -271,7 +320,8 @@ class RagRepository:
         cursor = conn.execute(
             """
             SELECT id, workspace_id, artifact_entry_id, source_type, source_name, source_path,
-                   content_hash, indexed_at, file_size, stale_at, created_at, updated_at
+                   content_hash, indexed_at, file_size, embedding_status, embedding_model,
+                   embedding_error, stale_at, created_at, updated_at
             FROM rag_documents
             WHERE stale_at IS NOT NULL AND stale_at <= ? AND source_type = 'chatpdf'
             ORDER BY stale_at ASC
@@ -443,6 +493,9 @@ class RagRepository:
     ) -> list[tuple[str, float]]:
         if not query:
             return []
+        safe_query = _escape_fts5_query(query)
+        if not safe_query:
+            return []
         conn = self._db.get_connection()
         if scope == "session":
             if not session_id:
@@ -458,7 +511,7 @@ class RagRepository:
                 ORDER BY score
                 LIMIT ?
                 """,
-                (session_id, query, limit),
+                (session_id, safe_query, limit),
             )
         else:
             workspace_scope = GLOBAL_WORKSPACE_ID if scope == "global" else workspace_id
@@ -474,7 +527,7 @@ class RagRepository:
                 ORDER BY score
                 LIMIT ?
                 """,
-                (workspace_scope, query, limit),
+                (workspace_scope, safe_query, limit),
             )
         return [(row["chunk_id"], float(row["score"])) for row in cursor.fetchall()]
 
@@ -529,6 +582,8 @@ class RagRepository:
         last_indexed_at: Optional[datetime] = None,
         error_message: Optional[str] = None,
         embedding_model: Optional[str] = None,
+        embedding_status: Optional[str] = None,
+        embedding_error: Optional[str] = None,
     ) -> None:
         conn = self._db.get_connection()
         conn.execute(
@@ -548,15 +603,19 @@ class RagRepository:
                 last_seen_at,
                 last_indexed_at,
                 error_message,
-                embedding_model
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                embedding_model,
+                embedding_status,
+                embedding_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_path, content_hash) DO UPDATE SET
                 status = excluded.status,
                 retry_count = excluded.retry_count,
                 last_seen_at = excluded.last_seen_at,
                 last_indexed_at = excluded.last_indexed_at,
                 error_message = excluded.error_message,
-                embedding_model = excluded.embedding_model
+                embedding_model = excluded.embedding_model,
+                embedding_status = excluded.embedding_status,
+                embedding_error = excluded.embedding_error
             """,
             (
                 source_path,
@@ -567,6 +626,8 @@ class RagRepository:
                 last_indexed_at.isoformat() if last_indexed_at else None,
                 error_message,
                 embedding_model,
+                embedding_status,
+                embedding_error,
             ),
         )
         conn.commit()
@@ -578,7 +639,7 @@ class RagRepository:
         cursor = conn.execute(
             """
             SELECT source_path, content_hash, status, retry_count, last_seen_at, last_indexed_at,
-                   error_message, embedding_model
+                   error_message, embedding_model, embedding_status, embedding_error
             FROM rag_index_registry
             WHERE source_path = ? AND content_hash = ?
             """,
@@ -597,7 +658,7 @@ class RagRepository:
             cursor = conn.execute(
                 """
                 SELECT source_path, content_hash, status, retry_count, last_seen_at, last_indexed_at,
-                       error_message, embedding_model
+                       error_message, embedding_model, embedding_status, embedding_error
                 FROM rag_index_registry
                 WHERE status = ?
                 ORDER BY last_seen_at DESC
@@ -608,7 +669,7 @@ class RagRepository:
             cursor = conn.execute(
                 """
                 SELECT source_path, content_hash, status, retry_count, last_seen_at, last_indexed_at,
-                       error_message, embedding_model
+                       error_message, embedding_model, embedding_status, embedding_error
                 FROM rag_index_registry
                 ORDER BY last_seen_at DESC
                 """
@@ -638,10 +699,20 @@ def _row_to_document(row: dict) -> RagDocument:
         content_hash=row["content_hash"],
         indexed_at=_parse_optional_datetime(row["indexed_at"]),
         file_size=row["file_size"],
+        embedding_status=row["embedding_status"],
+        embedding_model=row["embedding_model"],
+        embedding_error=row["embedding_error"],
         stale_at=_parse_optional_datetime(row["stale_at"]),
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),
     )
+
+
+def _escape_fts5_query(query: str) -> str:
+    tokens = _FTS_TOKEN_RE.findall(query)
+    if not tokens:
+        return ""
+    return " ".join('"' + token.replace('"', '""') + '"' for token in tokens)
 
 
 def _parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -688,4 +759,6 @@ def _row_to_registry_entry(row: dict) -> RagIndexRegistryEntry:
         last_indexed_at=_parse_optional_datetime(row["last_indexed_at"]),
         error_message=row["error_message"],
         embedding_model=row["embedding_model"],
+        embedding_status=row["embedding_status"],
+        embedding_error=row["embedding_error"],
     )

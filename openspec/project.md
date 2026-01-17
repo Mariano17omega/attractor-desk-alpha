@@ -49,7 +49,7 @@ Attractor Desk is a native Python desktop application for AI-assisted writing an
 - **Settings**: `SettingsViewModel` owns user-configurable options and persists to SQLite via `SettingsRepository`. API keys (except LangSmith) are stored securely in the OS keyring via `KeyringService`; LangSmith keys are dev-only and read from environment variables or `API_KEY.txt`.
 
 ### Data and Persistence
-- **SQLite**: Default DB at `~/.attractor_desk/database.db` (WAL) with tables for workspaces, sessions, messages, message_attachments, artifacts, RAG, and settings.
+- **SQLite**: Default DB at `~/.open_canvas/database.db` (WAL) with tables for workspaces, sessions, messages, message_attachments, artifacts, RAG, and settings. (Note: Migration to `~/.attractor_desk/` is planned but not yet implemented.)
 - **Artifacts**: Stored as `ArtifactCollectionV1` JSON with versioned `ArtifactV3` contents and export metadata. Includes `ArtifactPdfV1` for PDF artifacts in ChatPDF mode.
 - **Export**: Artifacts export to `~/Documents/Artifacts/Articles` via `ArtifactExportService`.
 - **Attachments**: Message attachments store file paths in SQLite; images are injected into chat payloads as data URLs. Screenshots are saved to `~/Documents/Attractor_Imagens`.

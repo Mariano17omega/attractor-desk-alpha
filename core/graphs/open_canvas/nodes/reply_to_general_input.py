@@ -2,6 +2,7 @@
 Reply to general input node - handles non-artifact responses.
 """
 
+from langchain_core.messages import AIMessage
 from langgraph.config import RunnableConfig
 
 from core.graphs.open_canvas.state import OpenCanvasState, OpenCanvasReturnType
@@ -20,7 +21,18 @@ async def reply_to_general_input(
 ) -> OpenCanvasReturnType:
     """
     Generate responses to questions. Does not generate artifacts.
+    
+    If a recovery message is set (from artifact dispatch validation failure),
+    returns that message directly without invoking the LLM.
     """
+    # Check for recovery message from artifact dispatch
+    if state.artifact_action_recovery_message:
+        recovery_response = AIMessage(content=state.artifact_action_recovery_message)
+        return {
+            "messages": [recovery_response],
+            "internal_messages": [recovery_response],
+        }
+    
     # Get model configuration
     configurable = config.get("configurable", {})
     model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")

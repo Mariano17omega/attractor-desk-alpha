@@ -2,10 +2,13 @@
 LangSmith tracing integration for Open Canvas.
 """
 
+import logging
 import os
 from typing import Optional
 
 from core.config import get_langsmith_api_key, is_langsmith_enabled
+
+logger = logging.getLogger(__name__)
 
 
 def setup_langsmith_tracing(
@@ -39,7 +42,7 @@ def setup_langsmith_tracing(
     os.environ["LANGCHAIN_PROJECT"] = project_name
     os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
     
-    print(f"LangSmith tracing enabled for project: {project_name}")
+    logger.info("LangSmith tracing enabled for project: %s", project_name)
     return True
 
 

@@ -13,7 +13,11 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from core.persistence.rag_repository import RagRepository
 from core.services.docling_service import convert_pdf_to_markdown
-from core.services.rag_service import RagIndexRequest, _index_document
+from core.services.rag_service import (
+    EMBEDDING_STATUS_INDEXED,
+    RagIndexRequest,
+    _index_document,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +91,8 @@ class _GlobalIndexWorker(QObject):
                     last_indexed_at=None,
                     error_message="File not found",
                     embedding_model=self._request.embedding_model,
+                    embedding_status=None,
+                    embedding_error=None,
                 )
                 self.progress.emit(processed, total, pdf_path)
                 continue
@@ -94,7 +100,22 @@ class _GlobalIndexWorker(QObject):
             file_size = file_path.stat().st_size
             file_hash = _hash_file(file_path)
             existing = self._repository.get_registry_entry(pdf_path, file_hash)
-            if existing and existing.status == "indexed" and not self._request.force_reindex:
+            embeddings_requested = bool(
+                self._request.embeddings_enabled and self._request.embedding_model
+            )
+            embeddings_ready = True
+            if embeddings_requested:
+                embeddings_ready = (
+                    existing is not None
+                    and existing.embedding_status == EMBEDDING_STATUS_INDEXED
+                    and existing.embedding_model == self._request.embedding_model
+                )
+            if (
+                existing
+                and existing.status == "indexed"
+                and not self._request.force_reindex
+                and embeddings_ready
+            ):
                 skipped += 1
                 processed += 1
                 self._repository.upsert_registry_entry(
@@ -105,7 +126,9 @@ class _GlobalIndexWorker(QObject):
                     last_seen_at=_now(),
                     last_indexed_at=existing.last_indexed_at,
                     error_message=existing.error_message,
-                    embedding_model=self._request.embedding_model,
+                    embedding_model=existing.embedding_model or self._request.embedding_model,
+                    embedding_status=existing.embedding_status,
+                    embedding_error=existing.embedding_error,
                 )
                 self.progress.emit(processed, total, pdf_path)
                 continue
@@ -119,6 +142,8 @@ class _GlobalIndexWorker(QObject):
                 last_indexed_at=existing.last_indexed_at if existing else None,
                 error_message=None,
                 embedding_model=self._request.embedding_model,
+                embedding_status=existing.embedding_status if existing else None,
+                embedding_error=existing.embedding_error if existing else None,
             )
 
             cached_markdown = self._markdown_cache.get(file_hash)
@@ -166,6 +191,8 @@ class _GlobalIndexWorker(QObject):
                                 last_indexed_at=None,
                                 error_message=conversion.error_message,
                                 embedding_model=self._request.embedding_model,
+                                embedding_status=None,
+                                embedding_error=None,
                             )
                         else:
                             self._markdown_cache[file_hash] = conversion.markdown
@@ -196,6 +223,8 @@ class _GlobalIndexWorker(QObject):
                             last_indexed_at=None,
                             error_message="Conversion timed out",
                             embedding_model=self._request.embedding_model,
+                            embedding_status=None,
+                            embedding_error=None,
                         )
                         processed += 1
                         self.progress.emit(processed, total, pdf_path)
@@ -241,6 +270,8 @@ class _GlobalIndexWorker(QObject):
                 last_indexed_at=_now(),
                 error_message=None,
                 embedding_model=self._request.embedding_model,
+                embedding_status=index_result.embedding_status,
+                embedding_error=index_result.embedding_error or None,
             )
             return True
         retry_count = (existing.retry_count + 1) if existing else 1
@@ -253,6 +284,8 @@ class _GlobalIndexWorker(QObject):
             last_indexed_at=None,
             error_message=index_result.error_message,
             embedding_model=self._request.embedding_model,
+            embedding_status=index_result.embedding_status,
+            embedding_error=index_result.embedding_error or None,
         )
         return False
 

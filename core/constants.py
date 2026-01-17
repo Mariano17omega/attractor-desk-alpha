@@ -35,6 +35,10 @@ DEFAULT_INPUTS = {
     "custom_quick_action_id": None,
     "web_search_enabled": None,
     "web_search_results": None,
+    # Artifact operation routing (for ArtifactOps subgraph)
+    "artifact_action": None,
+    "artifact_action_params": None,
+    "artifact_action_recovery_message": None,
 }
 
 

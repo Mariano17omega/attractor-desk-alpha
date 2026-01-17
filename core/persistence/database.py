@@ -77,6 +77,9 @@ class Database:
         content_hash TEXT NOT NULL,
         indexed_at TEXT,
         file_size INTEGER,
+        embedding_status TEXT NOT NULL DEFAULT 'disabled',
+        embedding_model TEXT,
+        embedding_error TEXT,
         stale_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -137,6 +140,8 @@ class Database:
         last_indexed_at TEXT,
         error_message TEXT,
         embedding_model TEXT,
+        embedding_status TEXT,
+        embedding_error TEXT,
         PRIMARY KEY (source_path, content_hash)
     );
 
@@ -152,7 +157,7 @@ class Database:
 
     def __init__(self, db_path: Optional[Path] = None):
         if db_path is None:
-            db_path = Path.home() / ".open_canvas" / "database.db"
+            db_path = Path.home() / ".attractor_desk" / "database.db"
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
@@ -172,9 +177,14 @@ class Database:
     def _ensure_rag_document_columns(self, conn: sqlite3.Connection) -> None:
         cursor = conn.execute("PRAGMA table_info(rag_documents)")
         existing = {row["name"] for row in cursor.fetchall()}
+        embedding_status_added = "embedding_status" not in existing
+        embedding_model_added = "embedding_model" not in existing
         columns = {
             "indexed_at": "TEXT",
             "file_size": "INTEGER",
+            "embedding_status": "TEXT NOT NULL DEFAULT 'disabled'",
+            "embedding_model": "TEXT",
+            "embedding_error": "TEXT",
             "stale_at": "TEXT",
         }
         for name, col_type in columns.items():
@@ -187,28 +197,93 @@ class Database:
             WHERE indexed_at IS NULL
             """
         )
+        if embedding_status_added:
+            conn.execute(
+                """
+                UPDATE rag_documents
+                SET embedding_status = 'indexed',
+                    embedding_model = COALESCE(
+                        embedding_model,
+                        (
+                            SELECT e.model
+                            FROM rag_embeddings e
+                            JOIN rag_chunks c ON c.id = e.chunk_id
+                            WHERE c.document_id = rag_documents.id
+                            LIMIT 1
+                        )
+                    )
+                WHERE embedding_status = 'disabled'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM rag_embeddings e
+                    JOIN rag_chunks c ON c.id = e.chunk_id
+                    WHERE c.document_id = rag_documents.id
+                )
+                """
+            )
+        elif embedding_model_added:
+            conn.execute(
+                """
+                UPDATE rag_documents
+                SET embedding_model = COALESCE(
+                    embedding_model,
+                    (
+                        SELECT e.model
+                        FROM rag_embeddings e
+                        JOIN rag_chunks c ON c.id = e.chunk_id
+                        WHERE c.document_id = rag_documents.id
+                        LIMIT 1
+                    )
+                )
+                WHERE embedding_status = 'indexed'
+                  AND embedding_model IS NULL
+                  AND EXISTS (
+                    SELECT 1
+                    FROM rag_embeddings e
+                    JOIN rag_chunks c ON c.id = e.chunk_id
+                    WHERE c.document_id = rag_documents.id
+                )
+                """
+            )
 
     def _ensure_rag_index_registry(self, conn: sqlite3.Connection) -> None:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS rag_index_registry (
-                source_path TEXT NOT NULL,
-                content_hash TEXT NOT NULL,
-                status TEXT NOT NULL,
-                retry_count INTEGER NOT NULL,
-                last_seen_at TEXT,
-                last_indexed_at TEXT,
-                error_message TEXT,
-                embedding_model TEXT,
-                PRIMARY KEY (source_path, content_hash)
-            )
-            """
-        )
         cursor = conn.execute("PRAGMA table_info(rag_index_registry)")
         existing = {row["name"] for row in cursor.fetchall()}
+        embedding_status_added = "embedding_status" not in existing
         if "embedding_model" not in existing:
             conn.execute(
                 "ALTER TABLE rag_index_registry ADD COLUMN embedding_model TEXT"
+            )
+        if "embedding_status" not in existing:
+            conn.execute(
+                "ALTER TABLE rag_index_registry ADD COLUMN embedding_status TEXT"
+            )
+        if "embedding_error" not in existing:
+            conn.execute(
+                "ALTER TABLE rag_index_registry ADD COLUMN embedding_error TEXT"
+            )
+        if embedding_status_added:
+            conn.execute(
+                """
+                UPDATE rag_index_registry
+                SET embedding_status = 'indexed'
+                WHERE embedding_status IS NULL
+                  AND EXISTS (
+                    SELECT 1
+                    FROM rag_documents d
+                    JOIN rag_chunks c ON c.document_id = d.id
+                    JOIN rag_embeddings e ON e.chunk_id = c.id
+                    WHERE d.source_path = rag_index_registry.source_path
+                      AND d.content_hash = rag_index_registry.content_hash
+                )
+                """
+            )
+            conn.execute(
+                """
+                UPDATE rag_index_registry
+                SET embedding_status = 'disabled'
+                WHERE embedding_status IS NULL
+                """
             )
 
     def _seed_global_workspace(self, conn: sqlite3.Connection) -> None:

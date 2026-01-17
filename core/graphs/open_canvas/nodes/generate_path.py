@@ -30,33 +30,40 @@ async def generate_path(
     This matches the TypeScript implementation which:
     1. First checks for explicit state flags (highlighted_code, etc.)
     2. Falls through to LLM-based routing with ONLY 2 options
+    
+    For artifact operations, sets artifact_action and routes to artifactOps subgraph.
     """
     messages = state.internal_messages if state.internal_messages else state.messages
     
     # Check for direct routing based on explicit state flags
+    # These route through the ArtifactOps subgraph
     if state.highlighted_code:
-        return {"next": "updateArtifact"}
+        return {"next": "artifactOps", "artifact_action": "updateArtifact"}
     
     if state.highlighted_text:
-        return {"next": "updateHighlightedText"}
+        return {"next": "artifactOps", "artifact_action": "updateHighlightedText"}
     
     if state.language or state.artifact_length or state.regenerate_with_emojis or state.reading_level:
-        return {"next": "rewriteArtifactTheme"}
+        return {"next": "artifactOps", "artifact_action": "rewriteArtifactTheme"}
     
     if state.add_comments or state.add_logs or state.port_language or state.fix_bugs:
-        return {"next": "rewriteCodeArtifactTheme"}
+        return {"next": "artifactOps", "artifact_action": "rewriteCodeArtifactTheme"}
     
     if state.custom_quick_action_id:
-        return {"next": "customAction"}
+        return {"next": "artifactOps", "artifact_action": "customAction"}
     
     if state.web_search_enabled:
         # Determine intended route first, then store it for post-web-search routing
         intended_route_result = await _dynamic_determine_path(state, messages, config)
         intended_route = intended_route_result.get("next", "replyToGeneralInput")
-        return {
+        # Also preserve artifact_action if the intended route is an artifact operation
+        result = {
             "next": "webSearch",
             "post_web_search_route": intended_route,
         }
+        if intended_route_result.get("artifact_action"):
+            result["artifact_action"] = intended_route_result["artifact_action"]
+        return result
     
     # For all other cases, use LLM-based routing with constrained options
     # This matches the TypeScript dynamic-determine-path.ts behavior
@@ -205,5 +212,9 @@ async def _dynamic_determine_path(
     
     # print(f"[DEBUG] route: {route}")
     
+    # For artifact operations, route through artifactOps subgraph
+    if route in ("generateArtifact", "rewriteArtifact"):
+        return {"next": "artifactOps", "artifact_action": route}
+    
+    # Non-artifact routes go directly (replyToGeneralInput, imageProcessing)
     return {"next": route}
-

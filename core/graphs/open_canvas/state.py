@@ -169,6 +169,23 @@ class OpenCanvasState(BaseModel):
     rag_used: Optional[str] = None
     rag_route_debug: Optional[dict] = None
     
+    # Artifact operation routing (for ArtifactOps subgraph)
+    artifact_action: Optional[str] = Field(
+        default=None,
+        alias="artifactAction",
+        description="The artifact operation to perform (e.g., 'generateArtifact', 'rewriteArtifact').",
+    )
+    artifact_action_params: Optional[dict] = Field(
+        default=None,
+        alias="artifactActionParams",
+        description="Optional parameters for the artifact action.",
+    )
+    artifact_action_recovery_message: Optional[str] = Field(
+        default=None,
+        alias="artifactActionRecoveryMessage",
+        description="Deterministic recovery message for soft failures in artifact dispatch.",
+    )
+    
     class Config:
         arbitrary_types_allowed = True
         populate_by_name = True

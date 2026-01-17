@@ -1,6 +1,7 @@
 """Chat ViewModel for Open Canvas."""
 
 import asyncio
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -38,6 +39,8 @@ from core.types import (
 )
 from ui.viewmodels.settings_viewmodel import SettingsViewModel
 from ui.services.image_utils import file_path_to_data_url
+
+logger = logging.getLogger(__name__)
 
 
 class GraphWorker(QThread):
@@ -351,7 +354,7 @@ class ChatViewModel(QObject):
         self.status_changed.emit("Ready")
         
         # Debug: Print result keys
-        print(f"[DEBUG] Graph result keys: {list(result.keys())}")
+        logger.debug("Graph result keys: %s", list(result.keys()))
 
         internal_messages_from_result = False
         if "internal_messages" in result and result["internal_messages"] is not None:
@@ -360,7 +363,7 @@ class ChatViewModel(QObject):
         
         # Update artifact first
         if "artifact" in result and result["artifact"]:
-            print(f"[DEBUG] Artifact found in result: {type(result['artifact'])}")
+            logger.debug("Artifact found in result: %s", type(result["artifact"]))
             self._artifact = result["artifact"]
             if self._current_session:
                 self._artifact_repository.save_for_session(
@@ -369,14 +372,17 @@ class ChatViewModel(QObject):
                 )
             self.artifact_changed.emit()
             self._index_active_text_artifact()
-            print(f"[DEBUG] Artifact emitted with {len(self._artifact.contents)} contents")
+            logger.debug("Artifact emitted with %s contents", len(self._artifact.contents))
         else:
-            print(f"[DEBUG] No artifact in result. 'artifact' key exists: {'artifact' in result}")
+            logger.debug(
+                "No artifact in result. 'artifact' key exists: %s",
+                "artifact" in result,
+            )
         
         # Update messages with error handling
         if "messages" in result:
             new_messages = result["messages"]
-            print(f"[DEBUG] Messages in result: {len(new_messages)}")
+            logger.debug("Messages in result: %s", len(new_messages))
             for msg in new_messages:
                 try:
                     # Skip if already in our list
@@ -398,7 +404,7 @@ class ChatViewModel(QObject):
                             if not internal_messages_from_result:
                                 self._internal_messages.append(msg)
                 except Exception as e:
-                    print(f"[DEBUG] Error processing message: {e}")
+                    logger.warning("Error processing message: %s", e)
 
         title = result.get("session_title")
         if title and self._current_session:

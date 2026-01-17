@@ -4,9 +4,12 @@ Optional - fails gracefully if API key is not configured.
 """
 
 from dataclasses import dataclass
+import logging
 from typing import Optional
 
 from core.config import get_firecrawl_api_key, is_firecrawl_enabled
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -74,7 +77,7 @@ class FireCrawlProvider:
             Scraped page content, or None on failure
         """
         if not self.is_available:
-            print("Warning: FireCrawl not available, returning None")
+            logger.warning("FireCrawl not available, returning None")
             return None
         
         try:
@@ -100,7 +103,7 @@ class FireCrawlProvider:
             )
             
         except Exception as e:
-            print(f"FireCrawl scrape error: {e}")
+            logger.warning("FireCrawl scrape error: %s", e)
             return None
     
     def scrape_urls(self, urls: list[str]) -> list[ScrapedPage]:

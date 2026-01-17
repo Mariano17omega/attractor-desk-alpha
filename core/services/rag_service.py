@@ -23,6 +23,11 @@ from core.utils.chunking import chunk_markdown
 
 logger = logging.getLogger(__name__)
 
+EMBEDDING_STATUS_DISABLED = "disabled"
+EMBEDDING_STATUS_INDEXED = "indexed"
+EMBEDDING_STATUS_FAILED = "failed"
+EMBEDDING_STATUS_SKIPPED = "skipped"
+
 
 @dataclass(frozen=True)
 class RagIndexRequest:
@@ -51,6 +56,8 @@ class RagIndexResult:
     document_id: Optional[str]
     chunk_count: int
     skipped: bool = False
+    embedding_status: str = EMBEDDING_STATUS_DISABLED
+    embedding_error: str = ""
     error_message: str = ""
 
 
@@ -292,6 +299,18 @@ class RagService(QObject):
         return _heuristic_rerank(candidates, details_by_id, settings.scope)
 
 
+def _embeddings_requested(request: RagIndexRequest) -> bool:
+    return bool(request.embeddings_enabled and request.embedding_model)
+
+
+def _needs_embedding_retry(document, request: RagIndexRequest) -> bool:
+    if not _embeddings_requested(request):
+        return False
+    if document.embedding_status != EMBEDDING_STATUS_INDEXED:
+        return True
+    return document.embedding_model != request.embedding_model
+
+
 def _index_document(
     repository: RagRepository,
     request: RagIndexRequest,
@@ -307,12 +326,15 @@ def _index_document(
     if document and document.content_hash == content_hash:
         if request.session_id:
             repository.attach_document_to_session(document.id, request.session_id)
-        return RagIndexResult(
-            success=True,
-            document_id=document.id,
-            chunk_count=0,
-            skipped=True,
-        )
+        if not _needs_embedding_retry(document, request):
+            return RagIndexResult(
+                success=True,
+                document_id=document.id,
+                chunk_count=0,
+                skipped=True,
+                embedding_status=document.embedding_status,
+                embedding_error=document.embedding_error or "",
+            )
 
     if document is None:
         document = repository.create_document(
@@ -354,49 +376,79 @@ def _index_document(
     if request.session_id:
         repository.attach_document_to_session(document.id, request.session_id)
 
-    if request.embeddings_enabled and request.embedding_model and chunk_inputs:
-        cache_key = None
-        vectors: Optional[list[list[float]]] = None
-        if embedding_cache is not None:
-            cache_key = (
-                content_hash,
-                request.embedding_model,
-                request.chunk_size_chars,
-                request.chunk_overlap_chars,
-            )
-            cached = embedding_cache.get(cache_key)
-            if cached is not None and len(cached) == len(chunk_inputs):
-                vectors = cached
-        if vectors is None:
-            embedder = OpenRouterEmbeddings(
-                model=request.embedding_model,
-                api_key=request.api_key,
-            )
-            unique_texts: list[str] = []
-            unique_index: dict[str, int] = {}
-            for chunk in chunk_inputs:
-                if chunk.content not in unique_index:
-                    unique_index[chunk.content] = len(unique_texts)
-                    unique_texts.append(chunk.content)
-            unique_vectors = embedder.embed_texts(unique_texts)
-            vectors = [unique_vectors[unique_index[chunk.content]] for chunk in chunk_inputs]
-            if cache_key is not None:
-                embedding_cache[cache_key] = vectors
-        embeddings = [
-            RagEmbeddingInput(
-                chunk_id=chunk.id,
-                model=request.embedding_model,
-                dims=len(vector),
-                embedding_blob=_float_list_to_blob(vector),
-            )
-            for chunk, vector in zip(chunk_inputs, vectors)
-        ]
-        repository.upsert_embeddings(embeddings)
+    embedding_status = EMBEDDING_STATUS_DISABLED
+    embedding_error = ""
+    embedding_model = None
+    if _embeddings_requested(request):
+        embedding_model = request.embedding_model
+        if not chunk_inputs:
+            embedding_status = EMBEDDING_STATUS_SKIPPED
+        else:
+            try:
+                cache_key = None
+                vectors: Optional[list[list[float]]] = None
+                if embedding_cache is not None:
+                    cache_key = (
+                        content_hash,
+                        request.embedding_model,
+                        request.chunk_size_chars,
+                        request.chunk_overlap_chars,
+                    )
+                    cached = embedding_cache.get(cache_key)
+                    if cached is not None and len(cached) == len(chunk_inputs):
+                        vectors = cached
+                if vectors is None:
+                    embedder = OpenRouterEmbeddings(
+                        model=request.embedding_model,
+                        api_key=request.api_key,
+                    )
+                    unique_texts: list[str] = []
+                    unique_index: dict[str, int] = {}
+                    for chunk in chunk_inputs:
+                        if chunk.content not in unique_index:
+                            unique_index[chunk.content] = len(unique_texts)
+                            unique_texts.append(chunk.content)
+                    unique_vectors = embedder.embed_texts(unique_texts)
+                    if len(unique_vectors) != len(unique_texts):
+                        raise ValueError("Embedding count mismatch")
+                    vectors = [unique_vectors[unique_index[chunk.content]] for chunk in chunk_inputs]
+                    if cache_key is not None:
+                        embedding_cache[cache_key] = vectors
+                embeddings = [
+                    RagEmbeddingInput(
+                        chunk_id=chunk.id,
+                        model=request.embedding_model,
+                        dims=len(vector),
+                        embedding_blob=_float_list_to_blob(vector),
+                    )
+                    for chunk, vector in zip(chunk_inputs, vectors)
+                ]
+                if len(embeddings) != len(chunk_inputs):
+                    raise ValueError("Embedding count mismatch")
+                repository.upsert_embeddings(embeddings)
+                embedding_status = EMBEDDING_STATUS_INDEXED
+            except Exception as exc:
+                embedding_status = EMBEDDING_STATUS_FAILED
+                embedding_error = str(exc)
+                logger.warning(
+                    "Embedding generation failed for document %s: %s",
+                    document.id,
+                    exc,
+                )
+
+    repository.update_document_embedding_status(
+        document_id=document.id,
+        embedding_status=embedding_status,
+        embedding_model=embedding_model,
+        embedding_error=embedding_error or None,
+    )
 
     return RagIndexResult(
         success=True,
         document_id=document.id,
         chunk_count=len(chunk_inputs),
+        embedding_status=embedding_status,
+        embedding_error=embedding_error,
     )
 
 
@@ -426,7 +478,7 @@ def _cosine_similarity(query: list[float], vector: list[float], query_norm: floa
     if not vector:
         return 0.0
     vector_norm = _vector_norm(vector)
-    if vector_norm == 0:
+    if vector_norm == 0 or query_norm == 0:
         return 0.0
     dot = sum(a * b for a, b in zip(query, vector))
     return dot / (query_norm * vector_norm)

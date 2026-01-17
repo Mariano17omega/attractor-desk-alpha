@@ -4,6 +4,7 @@ This is the primary graph that handles all conversation and artifact generation.
 """
 
 from datetime import datetime
+import logging
 from typing import Literal, Optional
 
 from langchain_core.messages import BaseMessage, HumanMessage
@@ -14,18 +15,11 @@ from pydantic import BaseModel, Field
 from core.constants import CHARACTER_MAX, OC_SUMMARIZED_MESSAGE_KEY
 from core.graphs.open_canvas.nodes import (
     generate_path,
-    generate_artifact,
-    rewrite_artifact,
     reply_to_general_input,
-    generate_followup,
     clean_state,
-    rewrite_artifact_theme,
-    rewrite_code_artifact_theme,
-    update_artifact,
-    update_highlighted_text,
-    custom_action,
     image_processing,
 )
+from core.graphs.open_canvas.artifact_ops import artifact_ops_graph
 from core.graphs.open_canvas.prompts import (
     WEB_SEARCH_CLASSIFIER_PROMPT,
     WEB_SEARCH_QUERY_PROMPT,
@@ -33,7 +27,12 @@ from core.graphs.open_canvas.prompts import (
     SUMMARY_MESSAGE_TEMPLATE,
     TITLE_SYSTEM_PROMPT,
     TITLE_USER_PROMPT,
+    REFLECT_SYSTEM_PROMPT,
+    REFLECT_USER_PROMPT,
 )
+from core.store import get_store
+from core.types import Reflections
+from core.utils.reflections import get_formatted_reflections
 from core.graphs.open_canvas.state import OpenCanvasState, is_summary_message
 from core.graphs.rag.graph import graph as rag_graph
 from core.llm import get_chat_model
@@ -43,6 +42,8 @@ from core.providers.search import SearchResult as ProviderSearchResult
 from core.types import ExaMetadata, SearchResult as WebSearchResult
 from core.utils.artifacts import get_artifact_content, is_artifact_code_content, is_artifact_markdown_content
 from core.utils.messages import create_ai_message_from_web_results, format_messages, get_string_from_content
+
+logger = logging.getLogger(__name__)
 
 
 def route_node(state: OpenCanvasState) -> str:
@@ -154,7 +155,7 @@ async def summarizer_node(
         additional_kwargs={OC_SUMMARIZED_MESSAGE_KEY: True},
     )
 
-    print(f"[DEBUG] Summary generated ({len(summary_content)} chars).")
+    logger.debug("Summary generated (%s chars).", len(summary_content))
 
     return {"internal_messages": [summary_message]}
 
@@ -228,7 +229,7 @@ async def generate_title_node(
         title = args.get("title")
 
     if not title:
-        print("[DEBUG] Title generation skipped: no tool call returned.")
+        logger.debug("Title generation skipped: no tool call returned.")
         return {}
 
     repo = SessionRepository(Database())
@@ -244,7 +245,7 @@ async def generate_title_node(
         session.title = title
         session.updated_at = datetime.now()
         repo.update(session)
-        print(f"[DEBUG] Session title updated: {title}")
+        logger.debug("Session title updated: %s", title)
 
     return {"session_title": title}
 
@@ -260,12 +261,12 @@ async def web_search_node(
     messages = state.internal_messages if state.internal_messages else state.messages
     last_user_message = _last_user_message(messages)
     if not last_user_message:
-        print("[DEBUG] Web search skipped: no user message.")
+        logger.debug("Web search skipped: no user message.")
         return {"web_search_results": []}
 
     user_message = get_string_from_content(last_user_message.content).strip()
     if not user_message:
-        print("[DEBUG] Web search skipped: empty user message.")
+        logger.debug("Web search skipped: empty user message.")
         return {"web_search_results": []}
 
     configurable = config.get("configurable", {})
@@ -298,10 +299,10 @@ async def web_search_node(
         elif hasattr(result, "should_search"):
             should_search = bool(result.should_search)
     except Exception as exc:
-        print(f"[DEBUG] Web search classification failed: {exc}")
+        logger.warning("Web search classification failed: %s", exc)
 
     if not should_search:
-        print("[DEBUG] Web search not required for this message.")
+        logger.debug("Web search not required for this message.")
         return {"web_search_results": []}
 
     additional_context = f"The current date is {datetime.now().strftime('%B %d, %Y %H:%M')}"
@@ -318,7 +319,7 @@ async def web_search_node(
         query_content = str(query_content)
     query = query_content.strip()
     if not query:
-        print("[DEBUG] Web search skipped: query generation failed.")
+        logger.debug("Web search skipped: query generation failed.")
         return {"web_search_results": []}
 
     provider_name = configurable.get("web_search_provider", "exa") or "exa"
@@ -330,12 +331,12 @@ async def web_search_node(
         try:
             results = provider.search_sync(query, num_results=num_results)
         except Exception as exc:
-            print(f"[DEBUG] Exa search failed: {exc}")
+            logger.warning("Exa search failed: %s", exc)
     else:
-        print(f"[DEBUG] Web search provider not supported: {provider_name}")
+        logger.warning("Web search provider not supported: %s", provider_name)
 
     converted_results = _to_web_search_results(results)
-    print(f"[DEBUG] Web search results: {len(converted_results)}")
+    logger.debug("Web search results: %s", len(converted_results))
     return {"web_search_results": converted_results}
 
 
@@ -359,10 +360,124 @@ async def route_post_web_search(state: OpenCanvasState):
     return result
 
 
-async def reflect_node(state: OpenCanvasState):
-    """Placeholder for reflection trigger."""
-    # TODO: Implement reflection scheduling
+async def reflect_node(
+    state: OpenCanvasState,
+    config: RunnableConfig,
+):
+    """
+    Reflect on the conversation and artifact to generate/update user reflections.
+    
+    Reflections consist of:
+    - Style Guidelines: General style rules for generating content
+    - Content: Memories, facts, and insights about the user
+    
+    These are persisted to the store and used by other nodes to personalize responses.
+    """
+    configurable = config.get("configurable", {})
+    assistant_id = configurable.get("assistant_id", "default")
+    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
+    api_key = configurable.get("api_key")
+    
+    # Get existing reflections from store
+    store = get_store()
+    memories = store.get(["memories", assistant_id], "reflection")
+    
+    existing_reflections = "No existing reflections."
+    if memories and memories.value:
+        existing_reflections = get_formatted_reflections(Reflections(**memories.value))
+    
+    # Get artifact context
+    artifact_context = "No artifact was generated during this conversation."
+    if state.artifact and state.artifact.contents:
+        current_content = get_artifact_content(state.artifact)
+        if is_artifact_markdown_content(current_content):
+            artifact_context = current_content.full_markdown
+        elif is_artifact_code_content(current_content):
+            artifact_context = current_content.code
+    
+    # Format conversation
+    messages = state.internal_messages if state.internal_messages else state.messages
+    if not messages:
+        logger.debug("Reflection skipped: no messages.")
+        return {}
+    
+    conversation = format_messages(messages)
+    
+    # Build prompts
+    system_prompt = REFLECT_SYSTEM_PROMPT.format(
+        artifact=artifact_context,
+        reflections=existing_reflections,
+    )
+    user_prompt = REFLECT_USER_PROMPT.format(conversation=conversation)
+    
+    # Define the reflections output schema
+    class ReflectionsOutput(BaseModel):
+        """Generated reflections about the user."""
+        style_rules: list[str] = Field(
+            default_factory=list,
+            description="Style guidelines for generating content for this user.",
+        )
+        content: list[str] = Field(
+            default_factory=list,
+            description="Memories, facts, and insights about the user.",
+        )
+    
+    # Get model with structured output
+    model = get_chat_model(
+        model=model_name,
+        temperature=0,
+        streaming=False,
+        api_key=api_key,
+    )
+    
+    model_with_tool = model.bind_tools(
+        [
+            {
+                "name": "generate_reflections",
+                "description": "Generate the new, full list of reflections about the user.",
+                "schema": ReflectionsOutput,
+            }
+        ],
+        tool_choice="generate_reflections",
+    )
+    
+    try:
+        response = await model_with_tool.ainvoke([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ])
+        
+        # Extract reflections from tool call
+        if response.tool_calls:
+            args = response.tool_calls[0].get("args") or {}
+            new_reflections = {
+                "styleRules": args.get("style_rules", []),
+                "content": args.get("content", []),
+            }
+            
+            # Persist to store
+            store.put(["memories", assistant_id], "reflection", new_reflections)
+            logger.debug(
+                "Reflections updated: %d style rules, %d content items.",
+                len(new_reflections["styleRules"]),
+                len(new_reflections["content"]),
+            )
+    except Exception as exc:
+        logger.warning("Reflection generation failed: %s", exc)
+    
     return {}
+
+
+def route_artifact_ops_exit(state: OpenCanvasState) -> str:
+    """
+    Route after artifactOps subgraph completes.
+    
+    If a recovery message was set, route to replyToGeneralInput.
+    Otherwise, proceed to reflect.
+    """
+    if state.artifact_action_recovery_message:
+        return "replyToGeneralInput"
+    return "reflect"
 
 
 # Build the graph
@@ -372,14 +487,7 @@ builder = StateGraph(OpenCanvasState)
 builder.add_node("generatePath", generate_path)
 builder.add_node("ragRetrieve", rag_graph)
 builder.add_node("replyToGeneralInput", reply_to_general_input)
-builder.add_node("rewriteArtifact", rewrite_artifact)
-builder.add_node("rewriteArtifactTheme", rewrite_artifact_theme)
-builder.add_node("rewriteCodeArtifactTheme", rewrite_code_artifact_theme)
-builder.add_node("updateArtifact", update_artifact)
-builder.add_node("updateHighlightedText", update_highlighted_text)
-builder.add_node("generateArtifact", generate_artifact)
-builder.add_node("customAction", custom_action)
-builder.add_node("generateFollowup", generate_followup)
+builder.add_node("artifactOps", artifact_ops_graph)  # ArtifactOps subgraph
 builder.add_node("cleanState", clean_state)
 builder.add_node("reflect", reflect_node)
 builder.add_node("generateTitle", generate_title_node)
@@ -396,37 +504,28 @@ builder.add_conditional_edges(
     "generatePath",
     route_node,
     {
-        "updateArtifact": "updateArtifact",
-        "rewriteArtifactTheme": "rewriteArtifactTheme",
-        "rewriteCodeArtifactTheme": "rewriteCodeArtifactTheme",
+        "artifactOps": "ragRetrieve",  # Artifact operations go through RAG first
         "replyToGeneralInput": "ragRetrieve",
-        "generateArtifact": "ragRetrieve",
-        "rewriteArtifact": "ragRetrieve",
-        "customAction": "customAction",
-        "updateHighlightedText": "updateHighlightedText",
         "webSearch": "webSearch",
         "imageProcessing": "imageProcessing",
     },
 )
 
+# RAG retrieval routes to either artifactOps or replyToGeneralInput
+def route_after_rag(state: OpenCanvasState) -> str:
+    """Route after RAG retrieval based on artifact_action presence."""
+    if state.artifact_action:
+        return "artifactOps"
+    return "replyToGeneralInput"
+
 builder.add_conditional_edges(
     "ragRetrieve",
-    route_node,
+    route_after_rag,
     {
+        "artifactOps": "artifactOps",
         "replyToGeneralInput": "replyToGeneralInput",
-        "generateArtifact": "generateArtifact",
-        "rewriteArtifact": "rewriteArtifact",
     },
 )
-
-# Artifact generation/modification -> generateFollowup (for follow-up messages)
-builder.add_edge("generateArtifact", "generateFollowup")
-builder.add_edge("updateArtifact", "generateFollowup")
-builder.add_edge("updateHighlightedText", "generateFollowup")
-builder.add_edge("rewriteArtifact", "generateFollowup")
-builder.add_edge("rewriteArtifactTheme", "generateFollowup")
-builder.add_edge("rewriteCodeArtifactTheme", "generateFollowup")
-builder.add_edge("customAction", "generateFollowup")
 
 # Web search flow
 builder.add_edge("webSearch", "routePostWebSearch")
@@ -434,14 +533,8 @@ builder.add_conditional_edges(
     "routePostWebSearch",
     route_node,
     {
-        "generateArtifact": "ragRetrieve",
-        "rewriteArtifact": "ragRetrieve",
+        "artifactOps": "ragRetrieve",  # Artifact operations go through RAG after web search
         "replyToGeneralInput": "ragRetrieve",
-        "updateArtifact": "updateArtifact",
-        "rewriteArtifactTheme": "rewriteArtifactTheme",
-        "rewriteCodeArtifactTheme": "rewriteCodeArtifactTheme",
-        "customAction": "customAction",
-        "updateHighlightedText": "updateHighlightedText",
         "imageProcessing": "imageProcessing",
     },
 )
@@ -450,8 +543,17 @@ builder.add_conditional_edges(
 builder.add_edge("replyToGeneralInput", "cleanState")
 builder.add_edge("imageProcessing", "cleanState")
 
-# Followup -> reflect -> clean state
-builder.add_edge("generateFollowup", "reflect")
+# ArtifactOps subgraph exit -> conditional routing
+builder.add_conditional_edges(
+    "artifactOps",
+    route_artifact_ops_exit,
+    {
+        "reflect": "reflect",
+        "replyToGeneralInput": "replyToGeneralInput",  # Recovery path
+    },
+)
+
+# Reflect -> clean state
 builder.add_edge("reflect", "cleanState")
 
 # Clean state -> conditional title generation or end

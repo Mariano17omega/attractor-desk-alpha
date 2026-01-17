@@ -6,6 +6,8 @@ from core.models import Session, Workspace
 from core.persistence import Database, SessionRepository, WorkspaceRepository
 from core.persistence.rag_repository import RagChunkDetails, RagRepository
 from core.services.rag_service import (
+    EMBEDDING_STATUS_FAILED,
+    EMBEDDING_STATUS_INDEXED,
     RagIndexRequest,
     _heuristic_rerank,
     _index_document,
@@ -123,3 +125,59 @@ def test_indexing_attaches_and_scopes(tmp_path) -> None:
         limit=5,
     )
     assert workspace_hits
+
+
+def test_indexing_tracks_embedding_failure_and_retries(tmp_path, monkeypatch) -> None:
+    db = Database(tmp_path / "test.db")
+    workspace_repo = WorkspaceRepository(db)
+
+    workspace = Workspace.create("Workspace")
+    workspace_repo.create(workspace)
+
+    repository = RagRepository(db)
+
+    def fail_embed(_self, _texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "core.services.rag_service.OpenRouterEmbeddings.embed_texts",
+        fail_embed,
+    )
+
+    request = RagIndexRequest(
+        workspace_id=workspace.id,
+        session_id=None,
+        artifact_entry_id="entry-1",
+        source_type="artifact",
+        source_name="Doc",
+        content="hello world",
+        embedding_model="model-a",
+        embeddings_enabled=True,
+    )
+    result = _index_document(repository, request)
+    assert result.success is True
+    assert result.embedding_status == EMBEDDING_STATUS_FAILED
+    assert "boom" in result.embedding_error
+
+    assert result.document_id
+    document = repository.get_document(result.document_id)
+    assert document is not None
+    assert document.embedding_status == EMBEDDING_STATUS_FAILED
+
+    def ok_embed(_self, texts: list[str]) -> list[list[float]]:
+        return [[0.1, 0.2] for _ in texts]
+
+    monkeypatch.setattr(
+        "core.services.rag_service.OpenRouterEmbeddings.embed_texts",
+        ok_embed,
+    )
+
+    retry_result = _index_document(repository, request)
+    assert retry_result.success is True
+    assert retry_result.skipped is False
+    assert retry_result.embedding_status == EMBEDDING_STATUS_INDEXED
+    assert retry_result.document_id == result.document_id
+
+    document_after = repository.get_document(retry_result.document_id)
+    assert document_after is not None
+    assert document_after.embedding_status == EMBEDDING_STATUS_INDEXED

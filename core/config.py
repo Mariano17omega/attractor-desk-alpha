@@ -7,6 +7,7 @@ Loads API keys and settings using a priority chain:
 3. Legacy API_KEY.txt file (migration, deprecated)
 """
 
+import logging
 import os
 import warnings
 from pathlib import Path
@@ -18,6 +19,7 @@ from core.infrastructure.keyring_service import KeyringService, get_keyring_serv
 _config: dict[str, str] = {}
 _config_loaded: bool = False
 _keyring_service: Optional[KeyringService] = None
+logger = logging.getLogger(__name__)
 
 
 def _get_keyring() -> KeyringService:
@@ -115,7 +117,7 @@ def _load_from_file(path: Path) -> dict[str, str]:
             
             # Parse KEY=VALUE
             if "=" not in line:
-                print(f"Warning: Invalid line {line_num} in {path}: {line}")
+                logger.warning("Invalid line %s in %s: %s", line_num, path, line)
                 continue
                 
             key, value = line.split("=", 1)
@@ -162,12 +164,12 @@ def _validate_config(config: dict[str, str]) -> None:
     missing_required = [k for k in required_keys if k not in config]
     if missing_required:
         # Don't raise, just warn - the user might set keys via settings UI
-        print(f"Note: Missing API keys: {', '.join(missing_required)}")
-        print("You can configure these in Settings.")
+        logger.warning("Missing API keys: %s", ", ".join(missing_required))
+        logger.info("You can configure these in Settings.")
     
     missing_optional = [k for k in optional_keys if k not in config]
     if missing_optional:
-        print(f"Note: Optional keys not configured: {', '.join(missing_optional)}")
+        logger.info("Optional keys not configured: %s", ", ".join(missing_optional))
 
 
 def get_api_key(key_name: str) -> Optional[str]:

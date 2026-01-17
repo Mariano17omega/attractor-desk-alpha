@@ -2,6 +2,7 @@
 Generate artifact node - creates new artifacts based on user request.
 """
 
+import logging
 from typing import Any, Literal, Union
 from uuid import uuid4
 
@@ -22,6 +23,8 @@ from core.types import (
     ProgrammingLanguageOptions,
     Reflections,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ArtifactToolSchema(BaseModel):
@@ -107,6 +110,8 @@ async def generate_artifact(
     
     # Create artifact content
     artifact_type = args.get("type", "text")
+    artifact_title = args.get("title", "Untitled")
+    artifact_preview = args.get("artifact", "")[:100]
     
     if artifact_type == "code":
         # Map language string to enum
@@ -119,7 +124,7 @@ async def generate_artifact(
         content = ArtifactCodeV3(
             index=1,
             type="code",
-            title=args.get("title", "Untitled"),
+            title=artifact_title,
             language=language,
             code=args.get("artifact", ""),
         )
@@ -127,7 +132,7 @@ async def generate_artifact(
         content = ArtifactMarkdownV3(
             index=1,
             type="text",
-            title=args.get("title", "Untitled"),
+            title=artifact_title,
             full_markdown=args.get("artifact", ""),
         )
     
@@ -137,7 +142,7 @@ async def generate_artifact(
         contents=[content],
     )
     
-    print(f"[DEBUG] Generated artifact: type={artifact_type}, title={args.get('title', 'Untitled')}")
-    print(f"[DEBUG] Artifact content preview: {args.get('artifact', '')[:100]}...")
-    
+    logger.debug("Generated artifact: type=%s, title=%s", artifact_type, artifact_title)
+    logger.debug("Artifact content preview: %s...", artifact_preview)
+
     return {"artifact": new_artifact}

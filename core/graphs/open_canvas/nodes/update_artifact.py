@@ -2,6 +2,7 @@
 Update artifact node - handles highlighted code updates.
 """
 
+import logging
 from typing import Optional
 from langgraph.config import RunnableConfig
 from pydantic import BaseModel, Field
@@ -13,6 +14,8 @@ from core.utils.reflections import get_formatted_reflections
 from core.utils.artifacts import get_artifact_content, is_artifact_code_content
 from core.store import get_store
 from core.types import ArtifactCodeV3, Reflections
+
+logger = logging.getLogger(__name__)
 
 
 class UpdateArtifactSchema(BaseModel):
@@ -109,7 +112,7 @@ async def update_artifact(
     
     # Extract tool call
     if not response.tool_calls:
-        print("[WARN] No tool call in update_artifact, falling back to content")
+        logger.warning("No tool call in update_artifact, falling back to content")
         updated_text = response.content if isinstance(response.content, str) else str(response.content)
     else:
         tool_call = response.tool_calls[0]

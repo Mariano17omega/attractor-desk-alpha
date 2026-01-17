@@ -2,6 +2,7 @@
 Rewrite artifact node - modifies existing artifacts based on user request.
 """
 
+import logging
 from typing import Any, Optional, Literal
 from uuid import uuid4
 
@@ -22,6 +23,8 @@ from core.types import (
     ProgrammingLanguageOptions,
     Reflections,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class RewriteArtifactSchema(BaseModel):
@@ -131,7 +134,7 @@ async def rewrite_artifact(
     if not response.tool_calls:
         # Fallback if model refuses to call tool (rare with tool_choice forced)
         # But for 'rewrite', it implies the model might have just chatted.
-        print("[WARN] No tool call in rewrite_artifact, falling back to content")
+        logger.warning("No tool call in rewrite_artifact, falling back to content")
         # In this fallback, we risk dirty content, but it's better than crashing.
         new_content_text = response.content if isinstance(response.content, str) else str(response.content)
         new_type = artifact_type

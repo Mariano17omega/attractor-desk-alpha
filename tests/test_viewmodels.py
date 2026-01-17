@@ -74,3 +74,22 @@ def test_settings_viewmodel_deep_search_persistence(tmp_path: Path) -> None:
     assert reloaded.deep_search_enabled is True
     assert reloaded.exa_api_key == "exa-test-key-123"
     assert reloaded.deep_search_num_results == 10
+
+
+def test_settings_viewmodel_rag_global_persistence(tmp_path: Path) -> None:
+    """Integration test for RAG global settings state transitions."""
+    db = Database(tmp_path / "settings.db")
+    settings_vm = SettingsViewModel(settings_db=db)
+    settings_vm.rag_enabled = True
+    settings_vm.rag_global_folder = "/test/rag/folder"
+    settings_vm.rag_global_monitoring_enabled = True
+    settings_vm.rag_chatpdf_retention_days = 14
+    settings_vm.rag_scope = "global"
+    settings_vm.save_settings()
+
+    reloaded = SettingsViewModel(settings_db=db)
+    assert reloaded.rag_enabled is True
+    assert reloaded.rag_global_folder == "/test/rag/folder"
+    assert reloaded.rag_global_monitoring_enabled is True
+    assert reloaded.rag_chatpdf_retention_days == 14
+    assert reloaded.rag_scope == "global"

@@ -11,6 +11,6 @@
 
 ## 2. Validation
 - [x] 2.1 Unit tests: RagRepository scope queries (global/workspace/session), registry hashing/retries, watcher debounce, and graph routing for both modes.
-- [ ] 2.2 Integration tests: end-to-end indexing/retrieval for global vs ChatPDF, metadata (`rag_used`, citations) propagation, and UI viewmodels for settings + PDF viewer state transitions.
+- [x] 2.2 Integration tests: end-to-end indexing/retrieval for global vs ChatPDF, metadata (`rag_used`, citations) propagation, and UI viewmodels for settings + PDF viewer state transitions.
 - [ ] 2.3 Manual QA: monitor folder adds/removes while app runs, bulk index progress bar for 50+ PDFs, ChatPDF mode toggle normal→chatpdf→normal, retention cleanup run.
 - [x] 2.4 Run `openspec validate add-dual-rag-chatpdf-mode --strict` and address any issues before implementation.

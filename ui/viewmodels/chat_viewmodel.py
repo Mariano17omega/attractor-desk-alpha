@@ -339,9 +339,22 @@ class ChatViewModel(QObject):
         # Run in worker thread with a unique run token
         run_token = str(uuid4())
         self._active_run_token = run_token
+
+        # Check if previous worker is still running
+        if self._worker and self._worker.isRunning():
+            logger.warning("Previous worker still running, waiting for completion...")
+            self._worker.wait(timeout=100)  # Wait up to 100ms for graceful shutdown
+            if self._worker.isRunning():
+                logger.warning("Previous worker did not finish, terminating...")
+                self._worker.terminate()
+                self._worker.wait()
+
         self._worker = GraphWorker(state, config, run_token)
         self._worker.finished.connect(self._on_graph_finished)
         self._worker.error.connect(self._on_graph_error)
+        # Connect deleteLater to ensure proper cleanup
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.error.connect(self._worker.deleteLater)
         self._worker.start()
     
     def _on_graph_finished(self, result: dict, run_token: str):

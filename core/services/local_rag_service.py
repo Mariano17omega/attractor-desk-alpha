@@ -66,6 +66,12 @@ class _LocalIndexWorker(QObject):
         except Exception as exc:
             logger.exception("ChatPDF indexing failed")
             self.error.emit(str(exc))
+        finally:
+            # Explicitly close thread-local database connections
+            # This prevents connection leaks when worker threads terminate
+            from core.persistence import Database
+            db = Database()
+            db.close()
 
     def _run_index(self) -> LocalRagIndexResult:
         source_path = Path(self._request.pdf_path)

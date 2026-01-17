@@ -60,15 +60,21 @@ class GraphWorker(QThread):
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             result = loop.run_until_complete(
                 graph.ainvoke(self.state, self.config)
             )
-            
+
             loop.close()
             self.finished.emit(result, self.run_token)
         except Exception as e:
             self.error.emit(str(e), self.run_token)
+        finally:
+            # Explicitly close thread-local database connections
+            # This prevents connection leaks when worker threads terminate
+            from core.persistence import Database
+            db = Database()
+            db.close()
 
 
 class ChatViewModel(QObject):

@@ -77,7 +77,18 @@ class _ConversionWorker(QObject):
 
     def run(self) -> None:
         """Perform the PDF conversion using Docling."""
-        self.finished.emit(convert_pdf_to_markdown(self._pdf_path))
+        try:
+            self.finished.emit(convert_pdf_to_markdown(self._pdf_path))
+        finally:
+            # Explicitly close thread-local database connections
+            # This prevents connection leaks when worker threads terminate
+            # Note: Docling may not use database, but this ensures cleanup if it does
+            try:
+                from core.persistence import Database
+                db = Database()
+                db.close()
+            except Exception:
+                pass  # Non-fatal if Database not used
 
 
 class DoclingService(QObject):

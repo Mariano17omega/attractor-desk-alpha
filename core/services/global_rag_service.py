@@ -73,6 +73,12 @@ class _GlobalIndexWorker(QObject):
         except Exception as exc:
             logger.exception("Global RAG indexing failed")
             self.error.emit(str(exc))
+        finally:
+            # Explicitly close thread-local database connections
+            # This prevents connection leaks when worker threads terminate
+            from core.persistence import Database
+            db = Database()
+            db.close()
 
     def _run_index(self) -> GlobalRagIndexResult:
         indexed = 0

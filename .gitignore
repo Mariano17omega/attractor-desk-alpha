@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+.open_canvas/
+.agent/workflows/
+
 # C extensions
 *.so
 

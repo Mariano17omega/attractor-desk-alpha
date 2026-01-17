@@ -144,8 +144,8 @@ class OpenRouterChat(BaseChatModel):
         headers = {
             "Authorization": f"Bearer {self._get_api_key()}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://open-canvas-py.local",
-            "X-Title": "Open Canvas Python",
+            "HTTP-Referer": "https://attractor-desk.local",
+            "X-Title": "Attractor Desk",
         }
         
         with httpx.Client(timeout=self.timeout) as client:
@@ -209,8 +209,8 @@ class OpenRouterChat(BaseChatModel):
         headers = {
             "Authorization": f"Bearer {self._get_api_key()}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://open-canvas-py.local",
-            "X-Title": "Open Canvas Python",
+            "HTTP-Referer": "https://attractor-desk.local",
+            "X-Title": "Attractor Desk",
         }
         
         with httpx.Client(timeout=self.timeout) as client:

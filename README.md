@@ -71,19 +71,6 @@ We follow a strict separation of concerns:
    # Edit API_KEY.txt and add your keys
    ```
 
-### Clear memory
-
-To clear memory, delete the database file:
-
-```bash
-ls -la ~/.open_canvas/database.db*
-
-rm -f ~/.open_canvas/database.db*
-
-rm -f ~/.attractor_desk/database.db*
-
-```
-
 ## Usage
 
 ### Running the Application

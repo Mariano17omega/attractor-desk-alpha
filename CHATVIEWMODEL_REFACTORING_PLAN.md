@@ -288,6 +288,7 @@ H. GraphWorker
 Following SettingsViewModel refactoring pattern:
 
 ### Phase 1: Low-Risk Extractions (2-3 days)
+**Status:** ✅ COMPLETED
 
 #### 1.1 Extract AttachmentHandler
 - **Complexity:** ⭐ Low
@@ -308,6 +309,7 @@ Following SettingsViewModel refactoring pattern:
 ---
 
 ### Phase 2: Medium-Risk Extractions (4-5 days)
+**Status:** ✅ COMPLETED
 
 #### 2.1 Extract RagOrchestrator
 - **Complexity:** ⭐⭐⭐ High
@@ -328,8 +330,10 @@ Following SettingsViewModel refactoring pattern:
 ---
 
 ### Phase 3: High-Risk Extractions (5-7 days)
+**Status:** ✅ COMPLETED
 
 #### 3.1 Extract ChatPdfService
+- **Status:** ✅ COMPLETED
 - **Complexity:** ⭐⭐⭐⭐ Very High
 - **Dependencies:** LocalRagService, DoclingService, SessionRepository, MessageRepository, ArtifactRepository
 - **Impact:** 2 UI files (`ui/main_window.py` - ChatPDF menu, `ui/widgets/chat/chat_panel.py`)
@@ -338,35 +342,42 @@ Following SettingsViewModel refactoring pattern:
 - **Lines:** ~100
 
 #### 3.2 Extract GraphExecutionHandler
+**Status:** ✅ COMPLETED
 - **Complexity:** ⭐⭐⭐⭐⭐ Critical
 - **Dependencies:** GraphWorker, LangGraph, all Repositories, SettingsViewModel
 - **Scope:** send_message, _on_graph_finished, _on_graph_error, cancel_generation
 - **Impact:** Core functionality - ALL UI files
 - **Risk:** **Very High** - Critical path for all LLM interactions
 - **Signals to forward:** `message_added`, `is_loading_changed`, `status_changed`, `session_updated`
-- **Lines:** ~250
+- **Lines:** ~250 (split into GraphWorker: 69, GraphExecutionHandler: 409)
+- **ChatViewModel reduction:** 744 → 281 lines
 
 #### 3.3 Extract SessionManager
+**Status:** ✅ COMPLETED
 - **Complexity:** ⭐⭐⭐ High
-- **Dependencies:** SessionRepository, MessageRepository, ArtifactRepository
+- **Dependencies:** SessionRepository, MessageRepository
 - **Scope:** load_session, clear, session state
 - **Impact:** 2 UI files (`ui/main_window.py`, `ui/widgets/sidebar/session_list.py`)
 - **Risk:** Medium-High - Session lifecycle affects everything
 - **Signals to forward:** `messages_loaded`, `session_updated`
-- **Lines:** ~60
+- **Lines:** SessionManager: 126
+- **ChatViewModel:** 291 lines (steady after all Phase 3 extractions)
 
 ---
 
 ### Phase 4: Coordinator Assembly (2-3 days)
+**Status:** ✅ COMPLETED
 
 #### 4.1 Create ChatCoordinator
+**Status:** ✅ COMPLETED
 - **Complexity:** ⭐⭐⭐⭐ Very High
 - **Dependencies:** All extracted components
 - **Scope:** Facade with full backward compatibility
 - **Impact:** All UI files (update imports)
 - **Risk:** **Very High** - Integration of all subsystems
-- **Backward Compatibility:** All existing signals and properties
-- **Lines:** ~200-300 (delegation layer)
+- **Backward Compatibility:** All existing signals and properties maintained
+- **Lines:** ChatCoordinator: 358, ChatViewModel: 64 (wrapper)
+- **Total chat subsystem:** ~1,750 lines (well-organized across 10 focused classes)
 
 ---
 

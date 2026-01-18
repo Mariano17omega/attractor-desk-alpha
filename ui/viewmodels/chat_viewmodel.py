@@ -38,6 +38,7 @@ from core.types import (
     ArtifactV3,
 )
 from ui.viewmodels.settings.coordinator import SettingsCoordinator as SettingsViewModel
+from ui.viewmodels.chat.artifact_viewmodel import ArtifactViewModel
 from ui.services.image_utils import file_path_to_data_url
 
 logger = logging.getLogger(__name__)
@@ -113,7 +114,6 @@ class ChatViewModel(QObject):
 
         self._messages: list[BaseMessage] = []
         self._internal_messages: list[BaseMessage] = []
-        self._artifact: Optional[ArtifactV3] = None
         self._is_loading: bool = False
         self._assistant_id: str = str(uuid4())
         self._current_session: Optional[Session] = None
@@ -122,13 +122,15 @@ class ChatViewModel(QObject):
         self._worker: Optional[GraphWorker] = None
         self._active_run_token: Optional[str] = None
 
+        # Artifact management subsystem
+        self._artifact_viewmodel = ArtifactViewModel(artifact_repository, parent=self)
+        self._artifact_viewmodel.artifact_changed.connect(self.artifact_changed)
+
         # PDF import service
         self._docling_service = DoclingService(self)
         self._docling_service.conversion_complete.connect(self._on_pdf_conversion_complete)
         self._pending_pdf_path: Optional[str] = None
         self._pending_chatpdf_path: Optional[str] = None
-        self._conversation_mode: str = "normal"
-        self._active_pdf_document_id: Optional[str] = None
 
         if self._local_rag_service:
             self._local_rag_service.index_complete.connect(self._on_chatpdf_index_complete)
@@ -150,7 +152,7 @@ class ChatViewModel(QObject):
     @property
     def current_artifact(self) -> Optional[ArtifactV3]:
         """Get the current artifact."""
-        return self._artifact
+        return self._artifact_viewmodel.current_artifact
     
     @property
     def is_loading(self) -> bool:
@@ -208,29 +210,23 @@ class ChatViewModel(QObject):
             elif message.role == MessageRole.ASSISTANT:
                 self._messages.append(AIMessage(content=message.content))
         self._internal_messages = self._messages.copy()
-        collection = self._artifact_repository.get_collection(session_id)
-        self._artifact = collection.get_active_artifact() if collection else None
-        self._update_conversation_mode_from_collection(collection)
+        self._artifact_viewmodel.load_artifact_for_session(session_id)
         self.messages_loaded.emit(
             [
                 {"content": msg.content, "is_user": isinstance(msg, HumanMessage)}
                 for msg in self._messages
             ]
         )
-        self.artifact_changed.emit()
 
     def clear(self) -> None:
         if self._current_session and self._local_rag_service:
             self._local_rag_service.mark_session_stale(self._current_session.id)
         self._messages = []
         self._internal_messages = []
-        self._artifact = None
         self._current_session = None
-        self._conversation_mode = "normal"
-        self._active_pdf_document_id = None
+        self._artifact_viewmodel.clear_artifact()
         self._clear_pending_attachments()
         self.messages_loaded.emit([])
-        self.artifact_changed.emit()
     
     @Slot(str)
     def send_message(self, content: str):
@@ -301,12 +297,12 @@ class ChatViewModel(QObject):
             "messages": self._messages.copy(),
             "internal_messages": internal_messages,
             "web_search_enabled": self._settings_viewmodel.deep_search_enabled,
-            "conversation_mode": self._conversation_mode,
-            "active_pdf_document_id": self._active_pdf_document_id,
+            "conversation_mode": self._artifact_viewmodel.conversation_mode,
+            "active_pdf_document_id": self._artifact_viewmodel.active_pdf_document_id,
         }
-        
-        if self._artifact:
-            state["artifact"] = self._artifact
+
+        if self._artifact_viewmodel.current_artifact:
+            state["artifact"] = self._artifact_viewmodel.current_artifact
         
         exa_api_key = self._settings_viewmodel.exa_api_key or get_exa_api_key()
         firecrawl_api_key = (
@@ -333,8 +329,8 @@ class ChatViewModel(QObject):
                 "rag_embedding_model": self._settings_viewmodel.rag_embedding_model,
                 "rag_enable_query_rewrite": self._settings_viewmodel.rag_enable_query_rewrite,
                 "rag_enable_llm_rerank": self._settings_viewmodel.rag_enable_llm_rerank,
-                "conversation_mode": self._conversation_mode,
-                "active_pdf_document_id": self._active_pdf_document_id,
+                "conversation_mode": self._artifact_viewmodel.conversation_mode,
+                "active_pdf_document_id": self._artifact_viewmodel.active_pdf_document_id,
                 "web_search_provider": self._settings_viewmodel.search_provider,
                 "web_search_num_results": self._settings_viewmodel.deep_search_num_results,
                 "exa_api_key": exa_api_key or None,
@@ -383,15 +379,14 @@ class ChatViewModel(QObject):
         # Update artifact first
         if "artifact" in result and result["artifact"]:
             logger.debug("Artifact found in result: %s", type(result["artifact"]))
-            self._artifact = result["artifact"]
+            self._artifact_viewmodel.set_artifact(result["artifact"])
             if self._current_session:
                 self._artifact_repository.save_for_session(
                     self._current_session.id,
-                    self._artifact,
+                    result["artifact"],
                 )
-            self.artifact_changed.emit()
             self._index_active_text_artifact()
-            logger.debug("Artifact emitted with %s contents", len(self._artifact.contents))
+            logger.debug("Artifact emitted with %s contents", len(result["artifact"].contents))
         else:
             logger.debug(
                 "No artifact in result. 'artifact' key exists: %s",
@@ -450,22 +445,12 @@ class ChatViewModel(QObject):
     @Slot()
     def prev_artifact_version(self):
         """Navigate to previous artifact version."""
-        if not self._artifact:
-            return
-        
-        if self._artifact.current_index > 1:
-            self._artifact.current_index -= 1
-            self.artifact_changed.emit()
-    
+        self._artifact_viewmodel.prev_artifact_version()
+
     @Slot()
     def next_artifact_version(self):
         """Navigate to next artifact version."""
-        if not self._artifact:
-            return
-        
-        if self._artifact.current_index < len(self._artifact.contents):
-            self._artifact.current_index += 1
-            self.artifact_changed.emit()
+        self._artifact_viewmodel.next_artifact_version()
     
     @Slot()
     def clear_conversation(self):
@@ -549,8 +534,7 @@ class ChatViewModel(QObject):
         self._artifact_repository.save_collection(self._current_session.id, collection)
 
         # Update current artifact reference and emit signal
-        self._artifact = new_artifact
-        self.artifact_changed.emit()
+        self._artifact_viewmodel.set_artifact(new_artifact)
         self.pdf_import_status.emit(f"Imported: {result.source_filename}")
 
         self._index_pdf_artifact(
@@ -689,10 +673,10 @@ class ChatViewModel(QObject):
             collection.active_artifact_id = entry.id
 
         self._artifact_repository.save_collection(self._current_session.id, collection)
-        self._artifact = new_artifact
-        self._conversation_mode = "chatpdf"
-        self._active_pdf_document_id = result.document_id
-        self.artifact_changed.emit()
+        self._artifact_viewmodel.set_artifact(new_artifact)
+        # Update conversation mode to chatpdf
+        self._artifact_viewmodel._conversation_mode = "chatpdf"
+        self._artifact_viewmodel._active_pdf_document_id = result.document_id
         self.chatpdf_status.emit(f"ChatPDF ready: {pdf_title}")
         self._pending_chatpdf_path = None
 
@@ -703,42 +687,4 @@ class ChatViewModel(QObject):
     def on_artifact_selected(self, artifact_id: str) -> None:
         if not self._current_session:
             return
-        collection = self._artifact_repository.get_collection(self._current_session.id)
-        if not collection:
-            return
-        for entry in collection.artifacts:
-            if entry.id != artifact_id:
-                continue
-            if entry.artifact.contents:
-                current_content = entry.artifact.contents[-1]
-                if current_content.type == "pdf":
-                    self._conversation_mode = "chatpdf"
-                    self._active_pdf_document_id = getattr(
-                        current_content, "rag_document_id", None
-                    )
-                else:
-                    self._conversation_mode = "normal"
-                    self._active_pdf_document_id = None
-            break
-
-    def _update_conversation_mode_from_collection(
-        self, collection: Optional[ArtifactCollectionV1]
-    ) -> None:
-        if not collection:
-            self._conversation_mode = "normal"
-            self._active_pdf_document_id = None
-            return
-        active_entry = collection.get_active_entry()
-        if not active_entry or not active_entry.artifact.contents:
-            self._conversation_mode = "normal"
-            self._active_pdf_document_id = None
-            return
-        current_content = active_entry.artifact.contents[-1]
-        if current_content.type == "pdf":
-            self._conversation_mode = "chatpdf"
-            self._active_pdf_document_id = getattr(
-                current_content, "rag_document_id", None
-            )
-        else:
-            self._conversation_mode = "normal"
-            self._active_pdf_document_id = None
+        self._artifact_viewmodel.on_artifact_selected(artifact_id, self._current_session.id)

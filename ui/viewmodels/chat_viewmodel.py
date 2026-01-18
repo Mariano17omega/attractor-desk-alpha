@@ -14,15 +14,13 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from core.graphs.open_canvas import graph
 from core.models import Message, MessageAttachment, MessageRole, Session
 from core.config import get_exa_api_key, get_firecrawl_api_key
-from core.constants import DEFAULT_EMBEDDING_MODEL
 from core.persistence import (
     ArtifactRepository,
     MessageAttachmentRepository,
     MessageRepository,
     SessionRepository,
 )
-from core.services.docling_service import DoclingService, PdfConversionResult
-from core.services.rag_service import RagIndexRequest, RagService
+from core.services.rag_service import RagService
 from core.services.local_rag_service import (
     LocalRagService,
     LocalRagIndexRequest,
@@ -39,6 +37,8 @@ from core.types import (
 )
 from ui.viewmodels.settings.coordinator import SettingsCoordinator as SettingsViewModel
 from ui.viewmodels.chat.artifact_viewmodel import ArtifactViewModel
+from ui.viewmodels.chat.rag_orchestrator import RagOrchestrator
+from ui.viewmodels.chat.pdf_handler import PdfHandler
 from ui.services.image_utils import file_path_to_data_url
 
 logger = logging.getLogger(__name__)
@@ -126,10 +126,25 @@ class ChatViewModel(QObject):
         self._artifact_viewmodel = ArtifactViewModel(artifact_repository, parent=self)
         self._artifact_viewmodel.artifact_changed.connect(self.artifact_changed)
 
-        # PDF import service
-        self._docling_service = DoclingService(self)
-        self._docling_service.conversion_complete.connect(self._on_pdf_conversion_complete)
-        self._pending_pdf_path: Optional[str] = None
+        # RAG indexing orchestrator
+        self._rag_orchestrator = RagOrchestrator(
+            rag_service=rag_service,
+            artifact_repository=artifact_repository,
+            settings_viewmodel=settings_viewmodel,
+            parent=self,
+        )
+
+        # PDF import handler
+        self._pdf_handler = PdfHandler(
+            artifact_repository=artifact_repository,
+            artifact_viewmodel=self._artifact_viewmodel,
+            rag_orchestrator=self._rag_orchestrator,
+            parent=self,
+        )
+        self._pdf_handler.pdf_import_status.connect(self.pdf_import_status)
+        self._pdf_handler.error_occurred.connect(self.error_occurred)
+
+        # ChatPDF service (uses different service - LocalRagService)
         self._pending_chatpdf_path: Optional[str] = None
 
         if self._local_rag_service:
@@ -385,7 +400,11 @@ class ChatViewModel(QObject):
                     self._current_session.id,
                     result["artifact"],
                 )
-            self._index_active_text_artifact()
+                # Index the updated artifact
+                self._rag_orchestrator.index_active_text_artifact(
+                    workspace_id=self._current_session.workspace_id,
+                    session_id=self._current_session.id,
+                )
             logger.debug("Artifact emitted with %s contents", len(result["artifact"].contents))
         else:
             logger.debug(
@@ -478,131 +497,12 @@ class ChatViewModel(QObject):
         if not self._current_session:
             self.error_occurred.emit("No active session for PDF import")
             return
-        if self._docling_service.is_busy():
-            self.error_occurred.emit("A PDF conversion is already in progress")
-            return
 
-        self.pdf_import_status.emit(f"Converting PDF: {pdf_path}")
-        self._pending_pdf_path = pdf_path
-        self._docling_service.convert_pdf(pdf_path)
-
-    def _on_pdf_conversion_complete(self, result: PdfConversionResult) -> None:
-        """Handle completed PDF conversion and create artifact.
-
-        Args:
-            result: Conversion result from DoclingService.
-        """
-        if not result.success:
-            self.error_occurred.emit(result.error_message)
-            self.pdf_import_status.emit("")
-            return
-
-        if not self._current_session:
-            self.error_occurred.emit("No active session")
-            self.pdf_import_status.emit("")
-            return
-
-        # Create a new text artifact from the converted Markdown
-        markdown_content = ArtifactMarkdownV3(
-            index=1,
-            type="text",
-            title=result.source_filename,
-            fullMarkdown=result.markdown,
-        )
-        new_artifact = ArtifactV3(
-            currentIndex=1,
-            contents=[markdown_content],
-        )
-        entry = ArtifactEntry(
-            id=str(uuid4()),
-            artifact=new_artifact,
-            export_meta=ArtifactExportMeta(source_pdf=result.source_filename),
-        )
-
-        # Add to collection or create new collection
-        collection = self._artifact_repository.get_collection(self._current_session.id)
-        if collection is None:
-            collection = ArtifactCollectionV1(
-                version=1,
-                artifacts=[entry],
-                active_artifact_id=entry.id,
-            )
-        else:
-            collection.artifacts.append(entry)
-            collection.active_artifact_id = entry.id
-
-        self._artifact_repository.save_collection(self._current_session.id, collection)
-
-        # Update current artifact reference and emit signal
-        self._artifact_viewmodel.set_artifact(new_artifact)
-        self.pdf_import_status.emit(f"Imported: {result.source_filename}")
-
-        self._index_pdf_artifact(
-            entry_id=entry.id,
-            source_name=result.source_filename,
-            content=result.markdown,
-            source_path=self._pending_pdf_path,
-        )
-        self._pending_pdf_path = None
-
-    def _index_pdf_artifact(
-        self,
-        entry_id: str,
-        source_name: str,
-        content: str,
-        source_path: Optional[str],
-    ) -> None:
-        if not self._current_session or not self._rag_service:
-            return
-        request = RagIndexRequest(
+        self._pdf_handler.import_pdf(
+            pdf_path=pdf_path,
             workspace_id=self._current_session.workspace_id,
             session_id=self._current_session.id,
-            artifact_entry_id=entry_id,
-            source_type="pdf",
-            source_name=source_name,
-            source_path=source_path,
-            content=content,
-            chunk_size_chars=self._settings_viewmodel.rag_chunk_size_chars,
-            chunk_overlap_chars=self._settings_viewmodel.rag_chunk_overlap_chars,
-            embedding_model=self._settings_viewmodel.rag_embedding_model
-            or DEFAULT_EMBEDDING_MODEL,
-            embeddings_enabled=self._settings_viewmodel.rag_enabled
-            and self._settings_viewmodel.rag_k_vec > 0,
-            api_key=self._settings_viewmodel.api_key or None,
         )
-        self._rag_service.index_artifact(request)
-
-    def _index_active_text_artifact(self) -> None:
-        if not self._current_session or not self._rag_service:
-            return
-        if not self._settings_viewmodel.rag_index_text_artifacts:
-            return
-        collection = self._artifact_repository.get_collection(self._current_session.id)
-        if collection is None:
-            return
-        entry = collection.get_active_entry()
-        if entry is None or not entry.artifact.contents:
-            return
-        current_content = entry.artifact.contents[-1]
-        if getattr(current_content, "type", "") != "text":
-            return
-        source_name = current_content.title or "Untitled"
-        request = RagIndexRequest(
-            workspace_id=self._current_session.workspace_id,
-            session_id=self._current_session.id,
-            artifact_entry_id=entry.id,
-            source_type="artifact",
-            source_name=source_name,
-            content=current_content.full_markdown,
-            chunk_size_chars=self._settings_viewmodel.rag_chunk_size_chars,
-            chunk_overlap_chars=self._settings_viewmodel.rag_chunk_overlap_chars,
-            embedding_model=self._settings_viewmodel.rag_embedding_model
-            or DEFAULT_EMBEDDING_MODEL,
-            embeddings_enabled=self._settings_viewmodel.rag_enabled
-            and self._settings_viewmodel.rag_k_vec > 0,
-            api_key=self._settings_viewmodel.api_key or None,
-        )
-        self._rag_service.index_artifact(request)
 
     @Slot(str)
     def open_chatpdf(self, pdf_path: str) -> None:

@@ -16,8 +16,11 @@ from core.persistence import Database
 from core.infrastructure.keyring_service import KeyringService, get_keyring_service
 
 from .appearance_settings import AppearanceSettings
+from .chatpdf_cleanup_service import ChatPDFCleanupService
 from .deep_search_settings import DeepSearchSettings
+from .global_rag_orchestrator import GlobalRAGOrchestrator
 from .model_settings import ModelSettings, DEFAULT_MODELS, DEFAULT_IMAGE_MODELS
+from .rag_configuration_settings import RAGConfigurationSettings
 from .shortcuts_settings import ShortcutsSettings, DEFAULT_SHORTCUT_DEFINITIONS
 from .ui_visibility_settings import UIVisibilitySettings
 
@@ -28,15 +31,19 @@ class SettingsCoordinator(QObject):
 
     Phase 1: Appearance, shortcuts, UI visibility
     Phase 2: Models, deep search
-    Phase 3+: RAG, global RAG, ChatPDF cleanup (future)
+    Phase 3: RAG configuration, Global RAG orchestrator, ChatPDF cleanup
     """
 
     # Forward signals from subsystems
     theme_changed = Signal(ThemeMode)
     transparency_changed = Signal(int)
     keep_above_changed = Signal(bool)
-    shortcuts_changed = Signal()
-    deep_search_toggled = Signal(bool)
+    shortcuts_changed = Signal()\n    deep_search_toggled = Signal(bool)
+    global_rag_progress = Signal(int, int, str)
+    global_rag_complete = Signal(object)
+    global_rag_error = Signal(str)
+    global_rag_registry_updated = Signal()
+    chatpdf_cleanup_complete = Signal(int)
     settings_changed = Signal()
     settings_saved = Signal()
     error_occurred = Signal(str)
@@ -45,6 +52,7 @@ class SettingsCoordinator(QObject):
         self,
         database: Optional[Database] = None,
         keyring_service: Optional[KeyringService] = None,
+        chroma_service: Optional["ChromaService"] = None,
         parent: Optional[QObject] = None,
     ):
         super().__init__(parent)
@@ -52,6 +60,7 @@ class SettingsCoordinator(QObject):
         # Shared dependencies
         self._db = database or Database()
         self._keyring = keyring_service or get_keyring_service()
+        self._chroma = chroma_service
 
         # Phase 1 subsystems
         self.appearance = AppearanceSettings(self._db, parent=self)
@@ -61,6 +70,15 @@ class SettingsCoordinator(QObject):
         # Phase 2 subsystems
         self.models = ModelSettings(self._db, self._keyring, parent=self)
         self.deep_search = DeepSearchSettings(self._db, self._keyring, parent=self)
+
+        # Phase 3 subsystems
+        self.rag_config = RAGConfigurationSettings(self._db, parent=self)
+        self.global_rag = GlobalRAGOrchestrator(
+            self.rag_config, self.models, self._db, self._chroma, parent=self
+        )
+        self.chatpdf_cleanup = ChatPDFCleanupService(
+            self.rag_config, self._db, self._chroma, parent=self
+        )
 
         # Track saved state for revert
         self._saved_state: dict[str, object] = {}
@@ -90,6 +108,18 @@ class SettingsCoordinator(QObject):
         self.deep_search.deep_search_toggled.connect(self.deep_search_toggled)
         self.deep_search.settings_changed.connect(self.settings_changed)
 
+        # RAG configuration signals
+        self.rag_config.settings_changed.connect(self.settings_changed)
+
+        # Global RAG orchestrator signals
+        self.global_rag.global_rag_progress.connect(self.global_rag_progress)
+        self.global_rag.global_rag_complete.connect(self.global_rag_complete)
+        self.global_rag.global_rag_error.connect(self.global_rag_error)
+        self.global_rag.global_rag_registry_updated.connect(self.global_rag_registry_updated)
+
+        # ChatPDF cleanup signals
+        self.chatpdf_cleanup.chatpdf_cleanup_complete.connect(self.chatpdf_cleanup_complete)
+
     def load_settings(self) -> None:
         """Load all settings from database."""
         self.appearance.load()
@@ -97,6 +127,11 @@ class SettingsCoordinator(QObject):
         self.ui_visibility.load()
         self.models.load()
         self.deep_search.load()
+        self.rag_config.load()
+
+        # Initialize Phase 3 orchestrators after config is loaded
+        self.global_rag.update_monitoring_state()
+
         self._saved_state = self.snapshot()
 
     def save_settings(self) -> None:
@@ -107,6 +142,7 @@ class SettingsCoordinator(QObject):
             self.ui_visibility.save()
             self.models.save()
             self.deep_search.save()
+            self.rag_config.save()
             self._saved_state = self.snapshot()
             self.settings_saved.emit()
         except Exception as exc:
@@ -120,6 +156,7 @@ class SettingsCoordinator(QObject):
             "ui_visibility": self.ui_visibility.snapshot(),
             "models": self.models.snapshot(),
             "deep_search": self.deep_search.snapshot(),
+            "rag_config": self.rag_config.snapshot(),
         }
 
     def restore_snapshot(self, snapshot: dict[str, object]) -> None:
@@ -134,6 +171,11 @@ class SettingsCoordinator(QObject):
             self.models.restore_snapshot(snapshot["models"])
         if "deep_search" in snapshot:
             self.deep_search.restore_snapshot(snapshot["deep_search"])
+        if "rag_config" in snapshot:
+            self.rag_config.restore_snapshot(snapshot["rag_config"])
+
+        # Update monitoring state after restore
+        self.global_rag.update_monitoring_state()
 
     def revert_to_saved(self) -> None:
         """Restore all settings to last saved state."""
@@ -332,3 +374,183 @@ class SettingsCoordinator(QObject):
     def deep_search_num_results(self, value: int) -> None:
         """Set number of search results."""
         self.deep_search.deep_search_num_results = value
+
+    # Phase 3 backward compatibility properties (RAG Configuration)
+
+    @property
+    def rag_enabled(self) -> bool:
+        """Get RAG enabled state."""
+        return self.rag_config.rag_enabled
+
+    @rag_enabled.setter
+    def rag_enabled(self, value: bool) -> None:
+        """Set RAG enabled state."""
+        self.rag_config.rag_enabled = value
+
+    @property
+    def rag_scope(self) -> str:
+        """Get RAG scope."""
+        return self.rag_config.rag_scope
+
+    @rag_scope.setter
+    def rag_scope(self, value: str) -> None:
+        """Set RAG scope."""
+        self.rag_config.rag_scope = value
+
+    @property
+    def rag_chunk_size_chars(self) -> int:
+        """Get chunk size."""
+        return self.rag_config.rag_chunk_size_chars
+
+    @rag_chunk_size_chars.setter
+    def rag_chunk_size_chars(self, value: int) -> None:
+        """Set chunk size."""
+        self.rag_config.rag_chunk_size_chars = value
+
+    @property
+    def rag_chunk_overlap_chars(self) -> int:
+        """Get chunk overlap."""
+        return self.rag_config.rag_chunk_overlap_chars
+
+    @rag_chunk_overlap_chars.setter
+    def rag_chunk_overlap_chars(self, value: int) -> None:
+        """Set chunk overlap."""
+        self.rag_config.rag_chunk_overlap_chars = value
+
+    @property
+    def rag_k_lex(self) -> int:
+        """Get lexical search k."""
+        return self.rag_config.rag_k_lex
+
+    @rag_k_lex.setter
+    def rag_k_lex(self, value: int) -> None:
+        """Set lexical search k."""
+        self.rag_config.rag_k_lex = value
+
+    @property
+    def rag_k_vec(self) -> int:
+        """Get vector search k."""
+        return self.rag_config.rag_k_vec
+
+    @rag_k_vec.setter
+    def rag_k_vec(self, value: int) -> None:
+        """Set vector search k."""
+        self.rag_config.rag_k_vec = value
+
+    @property
+    def rag_rrf_k(self) -> int:
+        """Get RRF constant."""
+        return self.rag_config.rag_rrf_k
+
+    @rag_rrf_k.setter
+    def rag_rrf_k(self, value: int) -> None:
+        """Set RRF constant."""
+        self.rag_config.rag_rrf_k = value
+
+    @property
+    def rag_max_candidates(self) -> int:
+        """Get max candidates."""
+        return self.rag_config.rag_max_candidates
+
+    @rag_max_candidates.setter
+    def rag_max_candidates(self, value: int) -> None:
+        """Set max candidates."""
+        self.rag_config.rag_max_candidates = value
+
+    @property
+    def rag_embedding_model(self) -> str:
+        """Get embedding model."""
+        return self.rag_config.rag_embedding_model
+
+    @rag_embedding_model.setter
+    def rag_embedding_model(self, value: str) -> None:
+        """Set embedding model."""
+        self.rag_config.rag_embedding_model = value
+
+    @property
+    def rag_enable_query_rewrite(self) -> bool:
+        """Get query rewrite enabled."""
+        return self.rag_config.rag_enable_query_rewrite
+
+    @rag_enable_query_rewrite.setter
+    def rag_enable_query_rewrite(self, value: bool) -> None:
+        """Set query rewrite enabled."""
+        self.rag_config.rag_enable_query_rewrite = value
+
+    @property
+    def rag_enable_llm_rerank(self) -> bool:
+        """Get LLM rerank enabled."""
+        return self.rag_config.rag_enable_llm_rerank
+
+    @rag_enable_llm_rerank.setter
+    def rag_enable_llm_rerank(self, value: bool) -> None:
+        """Set LLM rerank enabled."""
+        self.rag_config.rag_enable_llm_rerank = value
+
+    @property
+    def rag_index_text_artifacts(self) -> bool:
+        """Get text artifacts indexing enabled."""
+        return self.rag_config.rag_index_text_artifacts
+
+    @rag_index_text_artifacts.setter
+    def rag_index_text_artifacts(self, value: bool) -> None:
+        """Set text artifacts indexing enabled."""
+        self.rag_config.rag_index_text_artifacts = value
+
+    @property
+    def rag_global_folder(self) -> str:
+        """Get global RAG folder."""
+        return self.rag_config.rag_global_folder
+
+    @rag_global_folder.setter
+    def rag_global_folder(self, value: str) -> None:
+        """Set global RAG folder (triggers monitoring update)."""
+        self.rag_config.rag_global_folder = value
+        # Update monitoring if folder changed
+        self.global_rag.update_monitoring_state()
+
+    @property
+    def rag_global_monitoring_enabled(self) -> bool:
+        """Get global monitoring enabled."""
+        return self.rag_config.rag_global_monitoring_enabled
+
+    @rag_global_monitoring_enabled.setter
+    def rag_global_monitoring_enabled(self, value: bool) -> None:
+        """Set global monitoring enabled (triggers monitoring start/stop)."""
+        self.rag_config.rag_global_monitoring_enabled = value
+        # Update monitoring state
+        self.global_rag.update_monitoring_state()
+
+    @property
+    def rag_chatpdf_retention_days(self) -> int:
+        """Get ChatPDF retention days."""
+        return self.rag_config.rag_chatpdf_retention_days
+
+    @rag_chatpdf_retention_days.setter
+    def rag_chatpdf_retention_days(self, value: int) -> None:
+        """Set ChatPDF retention days."""
+        self.rag_config.rag_chatpdf_retention_days = value
+
+    # Phase 3 Global RAG orchestrator methods
+
+    def start_global_index(self, force_reindex: bool = False) -> None:
+        """Start global RAG indexing."""
+        self.global_rag.start_global_index(force_reindex)
+
+    def scan_global_folder(self) -> None:
+        """Scan global folder."""
+        self.global_rag.scan_global_folder()
+
+    def list_global_registry_entries(self, status: Optional[str] = None):
+        """List global registry entries."""
+        return self.global_rag.list_global_registry_entries(status)
+
+    def get_global_registry_status_counts(self) -> dict[str, int]:
+        """Get registry status counts."""
+        return self.global_rag.get_global_registry_status_counts()
+
+    # Phase 3 ChatPDF cleanup methods
+
+    def cleanup_chatpdf_documents(self) -> int:
+        """Cleanup ChatPDF documents."""
+        return self.chatpdf_cleanup.cleanup_chatpdf_documents()

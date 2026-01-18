@@ -183,10 +183,82 @@ UI follows Model-View-ViewModel:
 
 ### Settings Management
 
-**SettingsViewModel** (`ui/viewmodels/settings_viewmodel.py`):
+**SettingsCoordinator** (`ui/viewmodels/settings/coordinator.py`):
+- Refactored from 1148-line God Object into focused subsystems
 - User-configurable options: models, temperature, max tokens, API keys
 - Persisted via `SettingsRepository` to SQLite
 - API keys stored in OS keyring
+- See VIEWMODEL_REFACTORING_PLAN.md for architecture details
+
+### Chat/ViewModel Architecture
+
+**ChatViewModel** (`ui/viewmodels/chat_viewmodel.py`):
+- **Thin compatibility wrapper** (64 lines) extending ChatCoordinator
+- Maintains backward compatibility with existing UI code
+- **DO NOT add new logic to ChatViewModel** - extend subsystems instead
+
+**ChatCoordinator** (`ui/viewmodels/chat/coordinator.py`):
+- **Main orchestration facade** (358 lines) coordinating all chat subsystems
+- Forwards signals from all subsystems to maintain API compatibility
+- Manages subsystem lifecycle and cross-cutting concerns
+
+**Chat Subsystems** (`ui/viewmodels/chat/`):
+
+1. **SessionManager** (126 lines)
+   - Session lifecycle (load, clear, switch)
+   - Message loading and LangChain format conversion
+   - Session state management
+
+2. **GraphExecutionHandler** (409 lines)
+   - LangGraph execution orchestration
+   - Message sending and result processing
+   - GraphWorker lifecycle management
+   - Loading state and cancellation
+
+3. **GraphWorker** (69 lines)
+   - QThread for async graph execution
+   - Proper database connection cleanup
+   - Signal-based result delivery
+
+4. **ChatPdfService** (198 lines)
+   - ChatPDF mode initialization
+   - Isolated RAG scope management
+   - PDF artifact creation
+
+5. **PdfHandler** (158 lines)
+   - PDF conversion via Docling
+   - PDF import to text artifacts
+   - RAG indexing coordination
+
+6. **ArtifactViewModel** (154 lines)
+   - Artifact state and versioning
+   - Artifact navigation (prev/next)
+   - Conversation mode tracking
+
+7. **RagOrchestrator** (131 lines)
+   - RAG indexing coordination
+   - Background worker management
+   - Global/local RAG scope handling
+
+8. **AttachmentHandler** (85 lines)
+   - Image attachment management
+   - Multimodal input preparation
+
+**Architecture Rules for Future Work**:
+- ✅ Add new features to appropriate subsystem or create new subsystem
+- ✅ ChatCoordinator handles orchestration and signal forwarding only
+- ❌ DO NOT add business logic to ChatViewModel (it's just a wrapper)
+- ❌ DO NOT add business logic to ChatCoordinator (delegate to subsystems)
+- ✅ Each subsystem should have a single, clear responsibility
+- ✅ Use dependency injection for subsystem communication
+- ✅ Signals flow: Subsystem → ChatCoordinator → UI
+
+**Documentation**:
+- CHATVIEWMODEL_REFACTORING_PLAN.md (full architecture details)
+- PHASE1_COMPLETION_SUMMARY.md (AttachmentHandler, ArtifactViewModel)
+- PHASE2_COMPLETION_SUMMARY.md (RagOrchestrator, PdfHandler)
+- PHASE3_COMPLETION_SUMMARY.md (ChatPdfService, GraphExecutionHandler, SessionManager)
+- PHASE4_COMPLETION_SUMMARY.md (ChatCoordinator, final integration)
 
 ## Code Style & Conventions
 

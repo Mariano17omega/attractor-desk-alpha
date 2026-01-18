@@ -215,33 +215,70 @@ class SettingsCoordinator(QObject):  # 557 lines
 - PHASE3_COMPLETION_SUMMARY.md
 - PHASE4_COMPLETION_SUMMARY.md (pending)
 
-**ChatViewModel Note:**
-ChatViewModel (700+ lines) still requires similar refactoring. Estimated effort: 15-20 days.
-
 ---
 
-### 🟡 MEDIUM: God Object ViewModels (ChatViewModel)
-**Status:** [ ] Not Fixed
-**Files:**
-- `ui/viewmodels/chat_viewmodel.py` (700+ lines)
+### ✅ RESOLVED: God Object ViewModels (ChatViewModel)
+**Status:** [X] Fixed
+**Original File:** `ui/viewmodels/chat_viewmodel.py` (744 lines) - **REFACTORED TO THIN WRAPPER (64 lines)**
+**Resolved:** 2026-01-18
 
 **Severity:** Medium
 **Category:** Architecture / Maintainability
 
 **Description:**
-ChatViewModel violates Single Responsibility Principle, managing graph execution, PDF import, RAG indexing, and persistence in a single class.
+ChatViewModel violated Single Responsibility Principle, managing graph execution, PDF import, RAG indexing, session lifecycle, artifact management, and persistence in a single 744-line class.
 
-**Recommended Fix:**
-Apply same pattern as SettingsViewModel refactoring:
-- SessionManagement
-- MessageHandling
-- GraphOrchestrator
-- PDFImportService
-- RAGIndexingService
-- ArtifactManager
-- AttachmentHandler
+**Solution Implemented:**
+Refactored into 10 focused classes with ChatCoordinator facade:
 
-Estimated effort: 15-20 days (more complex than SettingsViewModel)
+```python
+# ui/viewmodels/chat/
+class SessionManager(QObject):  # 126 lines
+    """Session lifecycle, message loading, state management"""
+
+class GraphExecutionHandler(QObject):  # 409 lines
+    """LangGraph execution, message orchestration, worker management"""
+
+class GraphWorker(QThread):  # 69 lines
+    """Async QThread for graph execution with proper cleanup"""
+
+class ChatPdfService(QObject):  # 198 lines
+    """ChatPDF mode initialization, isolated RAG scope"""
+
+class PdfHandler(QObject):  # 158 lines
+    """PDF conversion via Docling, artifact import"""
+
+class ArtifactViewModel(QObject):  # 154 lines
+    """Artifact state, versioning, navigation"""
+
+class RagOrchestrator(QObject):  # 131 lines
+    """RAG indexing coordination, background workers"""
+
+class AttachmentHandler(QObject):  # 85 lines
+    """Image attachment management for multimodal models"""
+
+class ChatCoordinator(QObject):  # 358 lines
+    """Facade coordinating all subsystems with backward compatibility"""
+
+class ChatViewModel(ChatCoordinator):  # 64 lines
+    """Thin compatibility wrapper extending ChatCoordinator"""
+```
+
+**Results:**
+- ✅ 744-line God Object reduced to 64-line wrapper (91% reduction)
+- ✅ 10 focused classes created (69-409 lines each)
+- ✅ Full backward compatibility maintained - all signals forwarded
+- ✅ GraphWorker QThread properly manages lifecycle with deleteLater
+- ✅ Clear separation of concerns across subsystems
+- ✅ All subsystems independently testable
+- ✅ No functional regressions
+
+**Documentation:**
+- CHATVIEWMODEL_REFACTORING_PLAN.md
+- PHASE1_COMPLETION_SUMMARY.md (AttachmentHandler, ArtifactViewModel)
+- PHASE2_COMPLETION_SUMMARY.md (RagOrchestrator, PdfHandler)
+- PHASE3_COMPLETION_SUMMARY.md (ChatPdfService, GraphExecutionHandler, SessionManager)
+- PHASE4_COMPLETION_SUMMARY.md (ChatCoordinator, final integration)
 
 ---
 

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.models import ThemeMode
-from ui.viewmodels.settings_viewmodel import SettingsViewModel
+from ui.viewmodels import SettingsViewModel
 from ui.widgets.configuration.deep_search_page import DeepSearchPage
 from ui.widgets.configuration.models_page import ModelsPage
 from ui.widgets.configuration.placeholder_page import PlaceholderPage

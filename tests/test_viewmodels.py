@@ -10,7 +10,7 @@ from core.persistence import (
     SessionRepository,
     WorkspaceRepository,
 )
-from ui.viewmodels.settings_viewmodel import SettingsViewModel
+from ui.viewmodels import SettingsViewModel
 from ui.viewmodels.workspace_viewmodel import WorkspaceViewModel
 
 

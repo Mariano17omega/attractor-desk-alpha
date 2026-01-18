@@ -4,7 +4,7 @@ from pathlib import Path
 
 from core.models import ThemeMode
 from core.persistence import Database
-from ui.viewmodels.settings_viewmodel import SettingsViewModel
+from ui.viewmodels import SettingsViewModel
 
 
 def test_settings_viewmodel_clamps_values(tmp_path: Path) -> None:

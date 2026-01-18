@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.viewmodels.settings_viewmodel import SettingsViewModel
+from ui.viewmodels import SettingsViewModel
 
 
 class DeepSearchPage(QWidget):

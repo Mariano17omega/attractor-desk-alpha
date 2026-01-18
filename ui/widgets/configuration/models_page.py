@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.viewmodels.settings_viewmodel import SettingsViewModel, DEFAULT_IMAGE_MODELS
+from ui.viewmodels import SettingsViewModel
+from ui.viewmodels.settings import DEFAULT_IMAGE_MODELS
 
 
 class ModelsPage(QWidget):

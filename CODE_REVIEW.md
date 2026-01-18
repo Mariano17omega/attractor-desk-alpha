@@ -122,8 +122,8 @@ finally:
 
 ---
 
-### 🟡 MEDIUM: Plaintext API Key Fallback
-**Status:** [ ] Not Fixed - Correct only when the entire project is complete.
+### 🟡 MEDIUM: Plaintext API Key Fallback  Correct only when the entire project is complete.
+**Status:** [ ] Not Fixed 
 **File:** `ui/viewmodels/settings_viewmodel.py:851-873`
 **Severity:** Medium
 **Category:** Security
@@ -156,43 +156,92 @@ QMessageBox.warning(
 
 ---
 
-### 🟡 MEDIUM: God Object ViewModels
+### ✅ RESOLVED: God Object ViewModels (SettingsViewModel)
+**Status:** [X] Fixed
+**Original File:** `ui/viewmodels/settings_viewmodel.py` (1148 lines) - **DELETED**
+**Resolved:** 2026-01-18
+
+**Severity:** Medium
+**Category:** Architecture / Maintainability
+
+**Description:**
+SettingsViewModel violated Single Responsibility Principle, handling UI theme, model configuration, RAG directory monitoring, database cleanup, keyboard shortcuts, and more in a single 1148-line class.
+
+**Solution Implemented:**
+Refactored into 8 focused classes with SettingsCoordinator facade:
+
+```python
+# ui/viewmodels/settings/
+class AppearanceSettings(QObject):  # 143 lines
+    """Theme, fonts, transparency, window behavior"""
+
+class ShortcutsSettings(QObject):  # 179 lines
+    """Keyboard shortcut bindings"""
+
+class UIVisibilitySettings(QObject):  # 94 lines
+    """Sidebar/artifact panel visibility"""
+
+class ModelSettings(QObject):  # 240 lines
+    """LLM models, API keys (with KeyringService)"""
+
+class DeepSearchSettings(QObject):  # 189 lines
+    """Exa/Firecrawl web search configuration"""
+
+class RAGConfigurationSettings(QObject):  # 402 lines
+    """RAG algorithm parameters (pure config, no side effects)"""
+
+class GlobalRAGOrchestrator(QObject):  # 166 lines
+    """Global RAG indexing, monitoring, registry management"""
+
+class ChatPDFCleanupService(QObject):  # 119 lines
+    """Stale ChatPDF document cleanup (QTimer-based)"""
+
+class SettingsCoordinator(QObject):  # 557 lines
+    """Facade coordinating all subsystems with backward compatibility"""
+```
+
+**Results:**
+- ✅ 1148-line God Object eliminated
+- ✅ 8 focused classes created (94-402 lines each)
+- ✅ Full backward compatibility maintained
+- ✅ All UI files updated to use SettingsCoordinator
+- ✅ No functional regressions
+- ✅ Improved testability and maintainability
+
+**Documentation:**
+- VIEWMODEL_REFACTORING_PLAN.md
+- PHASE1_COMPLETION_SUMMARY.md
+- PHASE2_COMPLETION_SUMMARY.md
+- PHASE3_COMPLETION_SUMMARY.md
+- PHASE4_COMPLETION_SUMMARY.md (pending)
+
+**ChatViewModel Note:**
+ChatViewModel (700+ lines) still requires similar refactoring. Estimated effort: 15-20 days.
+
+---
+
+### 🟡 MEDIUM: God Object ViewModels (ChatViewModel)
 **Status:** [ ] Not Fixed
 **Files:**
-- `ui/viewmodels/settings_viewmodel.py` (1100+ lines)
 - `ui/viewmodels/chat_viewmodel.py` (700+ lines)
 
 **Severity:** Medium
 **Category:** Architecture / Maintainability
 
 **Description:**
-ViewModels violate Single Responsibility Principle. `SettingsViewModel` handles UI theme, model configuration, RAG directory monitoring, and database cleanup. `ChatViewModel` manages graph execution, PDF import, RAG indexing, and persistence.
-
-**Impact:**
-- High cognitive load for maintenance
-- Difficult to test (many dependencies and side effects)
-- Changes to one feature risk breaking others
-- Code review bottleneck
+ChatViewModel violates Single Responsibility Principle, managing graph execution, PDF import, RAG indexing, and persistence in a single class.
 
 **Recommended Fix:**
-```python
-# Split SettingsViewModel into:
-class AppearanceSettings(QObject):
-    """Theme, font size, UI preferences"""
+Apply same pattern as SettingsViewModel refactoring:
+- SessionManagement
+- MessageHandling
+- GraphOrchestrator
+- PDFImportService
+- RAGIndexingService
+- ArtifactManager
+- AttachmentHandler
 
-class ModelSettings(QObject):
-    """LLM model, temperature, max tokens"""
-
-class RagSettings(QObject):
-    """RAG directory, indexing, global toggle"""
-
-class SettingsCoordinator(QObject):
-    """Composes the above, exposes to UI"""
-    def __init__(self):
-        self.appearance = AppearanceSettings()
-        self.models = ModelSettings()
-        self.rag = RagSettings()
-```
+Estimated effort: 15-20 days (more complex than SettingsViewModel)
 
 ---
 

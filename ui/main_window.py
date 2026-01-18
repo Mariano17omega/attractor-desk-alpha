@@ -30,7 +30,7 @@ from ui.styles import get_dark_theme_stylesheet, get_light_theme_stylesheet
 from ui.services.screen_capture_service import ScreenCaptureService
 from ui.viewmodels.chat_viewmodel import ChatViewModel
 from ui.viewmodels.main_viewmodel import MainViewModel
-from ui.viewmodels.settings_viewmodel import SettingsViewModel
+from ui.viewmodels import SettingsViewModel
 from ui.viewmodels.workspace_viewmodel import WorkspaceViewModel
 from ui.widgets.artifact_panel import ArtifactPanel
 from ui.widgets.capture_preview_dialog import CapturePreviewDialog

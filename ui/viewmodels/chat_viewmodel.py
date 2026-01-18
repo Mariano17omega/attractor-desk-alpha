@@ -37,7 +37,7 @@ from core.types import (
     ArtifactPdfV1,
     ArtifactV3,
 )
-from ui.viewmodels import SettingsViewModel
+from ui.viewmodels.settings.coordinator import SettingsCoordinator as SettingsViewModel
 from ui.services.image_utils import file_path_to_data_url
 
 logger = logging.getLogger(__name__)

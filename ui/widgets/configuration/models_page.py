@@ -157,7 +157,7 @@ class ModelsPage(QWidget):
 
     def _refresh_default_combo(self) -> None:
         self._default_model_combo.clear()
-        for model in self._viewmodel.models:
+        for model in self._viewmodel.models_list:
             self._default_model_combo.addItem(model)
 
         index = self._default_model_combo.findText(self._viewmodel.default_model)
@@ -166,7 +166,7 @@ class ModelsPage(QWidget):
 
     def _refresh_image_model_combo(self) -> None:
         self._image_model_combo.clear()
-        for model in self._viewmodel.image_models:
+        for model in self._viewmodel.image_models_list:
             self._image_model_combo.addItem(model)
 
         index = self._image_model_combo.findText(self._viewmodel.image_model)

@@ -48,7 +48,7 @@ class MainWindow(QMainWindow):
         self._database = Database()
         self._chroma_service = ChromaService()
         self._settings_viewmodel = SettingsViewModel(
-            settings_db=self._database,
+            database=self._database,
             chroma_service=self._chroma_service,
         )
         self._workspace_repository = WorkspaceRepository(self._database)

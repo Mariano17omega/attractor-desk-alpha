@@ -23,6 +23,7 @@ However, several **high-priority issues** require immediate attention:
 ## Critical & High Priority Issues
 
 ### 🔴 HIGH: Memory Leaks in QThread Workers
+**Status:** [X] Fixed
 **File:** `ui/viewmodels/chat_viewmodel.py:342-345`
 **Severity:** High
 **Category:** Performance / Memory Management
@@ -58,6 +59,7 @@ if self._worker and self._worker.isRunning():
 ---
 
 ### 🔴 HIGH: Inefficient Vector Search (Linear Scan)
+**Status:** [X] Fixed
 **File:** `core/services/rag_service.py:245-278, 473-484`
 **Severity:** High
 **Category:** Performance
@@ -94,6 +96,7 @@ def _cosine_similarity(self, vec1, vec2):
 ---
 
 ### 🟡 MEDIUM: Database Connection Leaks in Workers
+**Status:** [X] Fixed
 **File:** `core/persistence/database.py:299-306`
 **Severity:** Medium
 **Category:** Resource Management
@@ -120,6 +123,7 @@ finally:
 ---
 
 ### 🟡 MEDIUM: Plaintext API Key Fallback
+**Status:** [ ] Not Fixed - Correct only when the entire project is complete.
 **File:** `ui/viewmodels/settings_viewmodel.py:851-873`
 **Severity:** Medium
 **Category:** Security
@@ -153,6 +157,7 @@ QMessageBox.warning(
 ---
 
 ### 🟡 MEDIUM: God Object ViewModels
+**Status:** [ ] Not Fixed
 **Files:**
 - `ui/viewmodels/settings_viewmodel.py` (1100+ lines)
 - `ui/viewmodels/chat_viewmodel.py` (700+ lines)
@@ -194,6 +199,7 @@ class SettingsCoordinator(QObject):
 ## Medium Priority Issues
 
 ### 🟡 Redundant Database Initialization in Graph Nodes
+**Status:** [ ] Not Fixed
 **File:** `core/graphs/open_canvas/graph.py:235`
 **Category:** Performance
 
@@ -207,6 +213,7 @@ Every title generation creates a new `Database()` instance, which runs `_init_sc
 ---
 
 ### 🟡 Race Condition in Session Switching
+**Status:** [ ] Not Fixed
 **File:** `ui/viewmodels/chat_viewmodel.py:347-417`
 **Category:** Concurrency Bug
 
@@ -230,6 +237,7 @@ def _on_graph_finished(self, result: dict):
 ---
 
 ### 🟡 Dynamic SQL in Migrations
+**Status:** [ ] Not Fixed
 **File:** `core/persistence/database.py:192`
 **Category:** Security (Low risk)
 
@@ -243,6 +251,7 @@ def _on_graph_finished(self, result: dict):
 ---
 
 ### 🟡 Code Duplication in Graph Nodes
+**Status:** [ ] Not Fixed
 **Files:** `core/graphs/open_canvas/nodes/*.py`
 **Category:** Code Quality
 
@@ -266,6 +275,7 @@ def update_artifact_content(state, new_content):
 ## Low Priority Issues
 
 ### 🟢 N+1 Query in Session Loading
+**Status:** [ ] Not Fixed
 **File:** `ui/viewmodels/chat_viewmodel.py:189-214`
 **Impact:** Minor latency when switching sessions.
 **Fix:** Create single repository method with joined query.
@@ -273,6 +283,7 @@ def update_artifact_content(state, new_content):
 ---
 
 ### 🟢 Path Traversal Edge Cases
+**Status:** [ ] Not Fixed
 **File:** `core/services/artifact_export_service.py:154-159`
 **Impact:** Basic sanitization exists, but doesn't handle Windows reserved names (CON, PRN).
 **Fix:** Enhance `_sanitize_filename` to check reserved names and use `Path.resolve()`.
@@ -280,6 +291,7 @@ def update_artifact_content(state, new_content):
 ---
 
 ### 🟢 Prompt Injection Risk
+**Status:** [ ] Not Fixed
 **File:** `core/graphs/open_canvas/nodes/custom_action.py:76`
 **Impact:** User can manipulate AI behavior via custom actions, but no system compromise.
 **Fix:** Add clearer delimiters in prompts to separate user data from instructions.
@@ -287,6 +299,7 @@ def update_artifact_content(state, new_content):
 ---
 
 ### 🟢 Missing Type Hints in Signal Payloads
+**Status:** [ ] Not Fixed
 **File:** `ui/viewmodels/*.py`
 **Impact:** Loss of IDE autocomplete and static type checking.
 **Fix:** Use Pydantic models for data passed through Qt signals.
@@ -294,6 +307,7 @@ def update_artifact_content(state, new_content):
 ---
 
 ### 🟢 Routing Fallback Logic
+**Status:** [ ] Not Fixed
 **File:** `core/graphs/open_canvas/nodes/generate_path.py:207-211`
 **Impact:** Invalid LLM routes default to artifact generation, which may be unexpected.
 **Fix:** Change fallback to `replyToGeneralInput` for safer default.

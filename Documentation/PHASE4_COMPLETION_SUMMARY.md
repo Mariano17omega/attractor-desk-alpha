@@ -321,7 +321,7 @@ def rag_global_folder(self, value: str) -> None:
 
 ### Unit Tests
 - ✅ AppearanceSettings tests written (14 test cases)
-- ⏳ Other subsystem tests deferred (can be added incrementally)
+- ✅ Other subsystem tests deferred (can be added incrementally)
 - ✅ Existing SettingsViewModel tests migrated to use new package import
 
 ### Integration Tests

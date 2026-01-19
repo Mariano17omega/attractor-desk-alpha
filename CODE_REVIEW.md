@@ -209,11 +209,11 @@ class SettingsCoordinator(QObject):  # 557 lines
 - ✅ Improved testability and maintainability
 
 **Documentation:**
-- VIEWMODEL_REFACTORING_PLAN.md
-- PHASE1_COMPLETION_SUMMARY.md
-- PHASE2_COMPLETION_SUMMARY.md
-- PHASE3_COMPLETION_SUMMARY.md
-- PHASE4_COMPLETION_SUMMARY.md (pending)
+- Documentation/VIEWMODEL_REFACTORING_PLAN.md
+- Documentation/PHASE1_COMPLETION_SUMMARY.md (AttachmentHandler, ArtifactViewModel)
+- Documentation/PHASE2_COMPLETION_SUMMARY.md (RagOrchestrator, PdfHandler)
+- Documentation/PHASE3_COMPLETION_SUMMARY.md (ChatPdfService, GraphExecutionHandler, SessionManager)
+- Documentation/PHASE4_COMPLETION_SUMMARY.md (ChatCoordinator, final integration)
 
 ---
 
@@ -274,11 +274,8 @@ class ChatViewModel(ChatCoordinator):  # 64 lines
 - ✅ No functional regressions
 
 **Documentation:**
-- CHATVIEWMODEL_REFACTORING_PLAN.md
-- PHASE1_COMPLETION_SUMMARY.md (AttachmentHandler, ArtifactViewModel)
-- PHASE2_COMPLETION_SUMMARY.md (RagOrchestrator, PdfHandler)
-- PHASE3_COMPLETION_SUMMARY.md (ChatPdfService, GraphExecutionHandler, SessionManager)
-- PHASE4_COMPLETION_SUMMARY.md (ChatCoordinator, final integration)
+- Documentation/CHATVIEWMODEL_REFACTORING_PLAN.md
+
 
 ---
 

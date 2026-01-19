@@ -75,7 +75,6 @@ mypy core/ ui/
 
 ```bash
 # Clear memory (deletes SQLite database)
-rm -f ~/.open_canvas/database.db*
 rm -f ~/.attractor_desk/database.db*
 ```
 
@@ -120,7 +119,7 @@ UI follows Model-View-ViewModel:
 ### Persistence Layer
 
 **SQLite** (`core/persistence/database.py`):
-- Default DB: `~/.open_canvas/database.db` (WAL mode)
+- Default DB: `~/.attractor_desk/database.db` (WAL mode)
 - Tables: workspaces, sessions, messages, message_attachments, artifacts, RAG (documents, chunks, FTS5, embeddings), settings
 
 **Repositories** (`core/persistence/`):
@@ -188,7 +187,7 @@ UI follows Model-View-ViewModel:
 - User-configurable options: models, temperature, max tokens, API keys
 - Persisted via `SettingsRepository` to SQLite
 - API keys stored in OS keyring
-- See VIEWMODEL_REFACTORING_PLAN.md for architecture details
+- See /Documentation/VIEWMODEL_REFACTORING_PLAN.md for architecture details
 
 ### Chat/ViewModel Architecture
 
@@ -254,11 +253,13 @@ UI follows Model-View-ViewModel:
 - ✅ Signals flow: Subsystem → ChatCoordinator → UI
 
 **Documentation**:
-- CHATVIEWMODEL_REFACTORING_PLAN.md (full architecture details)
-- PHASE1_COMPLETION_SUMMARY.md (AttachmentHandler, ArtifactViewModel)
-- PHASE2_COMPLETION_SUMMARY.md (RagOrchestrator, PdfHandler)
-- PHASE3_COMPLETION_SUMMARY.md (ChatPdfService, GraphExecutionHandler, SessionManager)
-- PHASE4_COMPLETION_SUMMARY.md (ChatCoordinator, final integration)
+- Documentation/CHATVIEWMODEL_REFACTORING_PLAN.md (full architecture details)
+- Documentation/VIEWMODEL_REFACTORING_PLAN.md (full architecture details)
+- Documentation/PHASE1_COMPLETION_SUMMARY.md (AttachmentHandler, ArtifactViewModel)
+- Documentation/PHASE2_COMPLETION_SUMMARY.md (RagOrchestrator, PdfHandler)
+- Documentation/PHASE3_COMPLETION_SUMMARY.md (ChatPdfService, GraphExecutionHandler, SessionManager)
+- Documentation/PHASE4_COMPLETION_SUMMARY.md (ChatCoordinator, final integration)
+
 
 ## Code Style & Conventions
 
@@ -267,21 +268,6 @@ UI follows Model-View-ViewModel:
 - **Type Checking**: Mypy (`warn_return_any`, `warn_unused_ignores`, `ignore_missing_imports`)
 - **Naming**: `snake_case` functions/variables, `PascalCase` classes
 - **Testing**: pytest + pytest-asyncio (`asyncio_mode=auto`)
-
-## OpenSpec Workflow
-
-This project uses OpenSpec for spec-driven development. When working on significant changes:
-
-1. **Check existing specs**: `openspec list --specs` and review `openspec/AGENTS.md`
-2. **Create proposal**: For features, breaking changes, architecture shifts, or performance/security work
-3. **Scaffold change**: Use `openspec/changes/<change-id>/` with `proposal.md`, `tasks.md`, optional `design.md`, and spec deltas
-4. **Validate**: Run `openspec validate <change-id> --strict` before sharing
-5. **Implementation**: Follow `tasks.md` sequentially
-6. **Archive**: After deployment, move to `changes/archive/YYYY-MM-DD-<change-id>/`
-
-**Skip proposal for**: Bug fixes, typos, formatting, comments, dependency updates, configuration changes.
-
-See `openspec/AGENTS.md` and `AGENTS.md` for detailed OpenSpec instructions.
 
 ## Domain Model
 
@@ -330,8 +316,6 @@ See `openspec/AGENTS.md` and `AGENTS.md` for detailed OpenSpec instructions.
 ## Important Constraints
 
 - **Qt Threading**: Never run graph execution, PDF conversion, or RAG indexing on UI thread
-- **Database**:
-  - Current path: `~/.open_canvas/database.db` (WAL mode)
-  - Migration to `~/.attractor_desk/` planned but not yet implemented
+- **Database**: Path: `~/.attractor_desk/database.db` (WAL mode)
 - **LangGraph Store**: In-memory only (reflections, non-persistent)
 - **RAG Isolation**: Global RAG and ChatPDF RAG are completely isolated; never combined

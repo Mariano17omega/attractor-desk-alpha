@@ -17,7 +17,7 @@ from core.services.rag_service import RagIndexRequest, _index_document
 
 logger = logging.getLogger(__name__)
 
-CHATPDF_STORAGE_DIR = Path.home() / ".open_canvas" / "chatpdf"
+CHATPDF_STORAGE_DIR = Path.home() / ".attractor_desk" / "chatpdf"
 
 
 @dataclass(frozen=True)

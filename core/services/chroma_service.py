@@ -28,7 +28,7 @@ class ChromaService:
         """Initialize ChromaDB client.
 
         Args:
-            persist_directory: Path to ChromaDB storage. Defaults to ~/.open_canvas/chromadb/
+            persist_directory: Path to ChromaDB storage. Defaults to ~/.attractor_desk/chromadb/
         """
         try:
             import chromadb
@@ -40,7 +40,7 @@ class ChromaService:
 
         if persist_directory is None:
             home = os.path.expanduser("~")
-            persist_directory = os.path.join(home, ".open_canvas", "chromadb")
+            persist_directory = os.path.join(home, ".attractor_desk", "chromadb")
 
         # Expand user paths and create directory
         persist_directory = os.path.expanduser(persist_directory)

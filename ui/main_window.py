@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
             artifact_repository=self._artifact_repository,
             session_repository=self._session_repository,
             settings_viewmodel=self._settings_viewmodel,
+            database=self._database,
             rag_service=self._rag_service,
             local_rag_service=self._local_rag_service,
         )

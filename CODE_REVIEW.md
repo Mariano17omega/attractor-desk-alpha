@@ -122,8 +122,8 @@ finally:
 
 ---
 
-### 🟡 MEDIUM: Plaintext API Key Fallback  Correct only when the entire project is complete.
-**Status:** [ ] Not Fixed 
+### 🔴 HIGH: Plaintext API Key Fallback  Correct only when the entire project is complete.
+**Status:** You should not correct it.
 **File:** `ui/viewmodels/settings_viewmodel.py:851-873`
 **Severity:** Medium
 **Category:** Security
@@ -282,7 +282,7 @@ class ChatViewModel(ChatCoordinator):  # 64 lines
 ## Medium Priority Issues
 
 ### 🟡 Redundant Database Initialization in Graph Nodes
-**Status:** [ ] Not Fixed
+**Status:** [X Not Fixed
 **File:** `core/graphs/open_canvas/graph.py:235`
 **Category:** Performance
 
@@ -296,7 +296,7 @@ Every title generation creates a new `Database()` instance, which runs `_init_sc
 ---
 
 ### 🟡 Race Condition in Session Switching
-**Status:** [ ] Not Fixed
+**Status:** [X Not Fixed
 **File:** `ui/viewmodels/chat_viewmodel.py:347-417`
 **Category:** Concurrency Bug
 
@@ -320,7 +320,7 @@ def _on_graph_finished(self, result: dict):
 ---
 
 ### 🟡 Dynamic SQL in Migrations
-**Status:** [ ] Not Fixed
+**Status:** [X Not Fixed
 **File:** `core/persistence/database.py:192`
 **Category:** Security (Low risk)
 
@@ -334,7 +334,7 @@ def _on_graph_finished(self, result: dict):
 ---
 
 ### 🟡 Code Duplication in Graph Nodes
-**Status:** [ ] Not Fixed
+**Status:** [X Not Fixed
 **Files:** `core/graphs/open_canvas/nodes/*.py`
 **Category:** Code Quality
 

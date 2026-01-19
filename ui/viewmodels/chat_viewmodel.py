@@ -4,6 +4,7 @@ from typing import Optional
 
 from core.persistence import (
     ArtifactRepository,
+    Database,
     MessageAttachmentRepository,
     MessageRepository,
     SessionRepository,
@@ -36,6 +37,7 @@ class ChatViewModel(ChatCoordinator):
         artifact_repository: ArtifactRepository,
         session_repository: SessionRepository,
         settings_viewmodel: SettingsViewModel,
+        database: Optional[Database] = None,
         rag_service: Optional[RagService] = None,
         local_rag_service: Optional[LocalRagService] = None,
         parent=None,
@@ -48,6 +50,7 @@ class ChatViewModel(ChatCoordinator):
             artifact_repository: Repository for artifact persistence
             session_repository: Repository for session persistence
             settings_viewmodel: Settings viewmodel for configuration
+            database: Optional shared database instance for graph config
             rag_service: Optional RAG service for global indexing
             local_rag_service: Optional local RAG service for ChatPDF
             parent: Optional parent QObject
@@ -58,6 +61,7 @@ class ChatViewModel(ChatCoordinator):
             artifact_repository=artifact_repository,
             session_repository=session_repository,
             settings_viewmodel=settings_viewmodel,
+            database=database,
             rag_service=rag_service,
             local_rag_service=local_rag_service,
             parent=parent,

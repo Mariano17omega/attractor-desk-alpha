@@ -11,7 +11,7 @@ from core.graphs.open_canvas.prompts import (
     FIX_BUGS_CODE_ARTIFACT_PROMPT,
     PORT_LANGUAGE_CODE_ARTIFACT_PROMPT,
 )
-from core.llm import get_chat_model
+from core.graphs.open_canvas.nodes.node_utils import get_model_from_config
 from core.utils.artifacts import get_artifact_content, is_artifact_code_content
 from core.types import ArtifactCodeV3, ProgrammingLanguageOptions
 
@@ -25,19 +25,10 @@ async def rewrite_code_artifact_theme(
     """
     if not state.artifact or not state.artifact.contents:
         raise ValueError("No artifact to rewrite")
-    
-    # Get model configuration
-    configurable = config.get("configurable", {})
-    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
-    api_key = configurable.get("api_key")
-    
-    model = get_chat_model(
-        model=model_name,
-        temperature=0.5,
-        streaming=False,
-        api_key=api_key,
-    )
-    
+
+    # Get model using shared utility
+    model = get_model_from_config(config, temperature=0.5, streaming=False)
+
     # Get current artifact content
     current_content = get_artifact_content(state.artifact)
     

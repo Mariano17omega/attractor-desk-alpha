@@ -13,15 +13,16 @@ from pydantic import BaseModel, Field
 from core.graphs.open_canvas.state import OpenCanvasState, OpenCanvasReturnType
 from core.graphs.open_canvas.prompts import UPDATE_ENTIRE_ARTIFACT_PROMPT, OPTIONALLY_UPDATE_META_PROMPT
 from core.graphs.open_canvas.nodes.rag_utils import build_rag_prompt
-from core.llm import get_chat_model
-from core.utils.reflections import get_formatted_reflections
+from core.graphs.open_canvas.nodes.node_utils import (
+    get_model_from_config,
+    get_reflections_from_store,
+    get_messages,
+)
 from core.utils.artifacts import get_artifact_content, is_artifact_markdown_content
-from core.store import get_store
 from core.types import (
     ArtifactCodeV3,
     ArtifactMarkdownV3,
     ProgrammingLanguageOptions,
-    Reflections,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,22 +58,13 @@ async def rewrite_artifact(
     """
     if not state.artifact or not state.artifact.contents:
         raise ValueError("No artifact to rewrite")
-    
-    # Get model configuration
-    configurable = config.get("configurable", {})
-    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
-    api_key = configurable.get("api_key")
-    
-    model = get_chat_model(
-        model=model_name,
-        temperature=0.5,
-        streaming=False,
-        api_key=api_key,
-    )
-    
+
+    # Get model using shared utility
+    model = get_model_from_config(config, temperature=0.5, streaming=False)
+
     # Get current artifact content
     current_content = get_artifact_content(state.artifact)
-    
+
     # Determine type
     if is_artifact_markdown_content(current_content):
         artifact_text = current_content.full_markdown
@@ -82,15 +74,9 @@ async def rewrite_artifact(
         artifact_text = current_content.code
         artifact_type = "code"
         current_lang = current_content.language.value
-    
-    # Get reflections
-    store = get_store()
-    assistant_id = configurable.get("assistant_id", "default")
-    memories = store.get(["memories", assistant_id], "reflection")
-    
-    reflections_str = "No reflections found."
-    if memories and memories.value:
-        reflections_str = get_formatted_reflections(Reflections(**memories.value))
+
+    # Get reflections using shared utility
+    reflections_str = get_reflections_from_store(config)
     
     # Build prompt
     update_meta = OPTIONALLY_UPDATE_META_PROMPT.format(
@@ -117,8 +103,8 @@ async def rewrite_artifact(
         tool_choice="rewrite_artifact",
     )
     
-    # Get messages
-    messages = state.internal_messages if state.internal_messages else state.messages
+    # Get messages using shared utility
+    messages = get_messages(state)
     recent_message = messages[-1] if messages else None
     
     if not recent_message:

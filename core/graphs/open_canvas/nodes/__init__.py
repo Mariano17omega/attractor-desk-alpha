@@ -14,6 +14,13 @@ from core.graphs.open_canvas.nodes.custom_action import custom_action
 
 from core.graphs.open_canvas.nodes.image_processing import image_processing
 
+# Shared utilities for node implementations
+from core.graphs.open_canvas.nodes.node_utils import (
+    get_model_from_config,
+    get_reflections_from_store,
+    get_messages,
+)
+
 __all__ = [
     "generate_path",
     "generate_artifact",
@@ -27,4 +34,8 @@ __all__ = [
     "update_highlighted_text",
     "custom_action",
     "image_processing",
+    # Utilities
+    "get_model_from_config",
+    "get_reflections_from_store",
+    "get_messages",
 ]

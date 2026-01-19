@@ -12,11 +12,12 @@ from core.graphs.open_canvas.prompts import (
     ADD_EMOJIS_TO_ARTIFACT_PROMPT,
     CHANGE_ARTIFACT_TO_PIRATE_PROMPT,
 )
-from core.llm import get_chat_model
-from core.utils.reflections import get_formatted_reflections
+from core.graphs.open_canvas.nodes.node_utils import (
+    get_model_from_config,
+    get_reflections_from_store,
+)
 from core.utils.artifacts import get_artifact_content, is_artifact_markdown_content
-from core.store import get_store
-from core.types import ArtifactMarkdownV3, Reflections
+from core.types import ArtifactMarkdownV3
 
 
 async def rewrite_artifact_theme(
@@ -28,36 +29,21 @@ async def rewrite_artifact_theme(
     """
     if not state.artifact or not state.artifact.contents:
         raise ValueError("No artifact to rewrite")
-    
-    # Get model configuration
-    configurable = config.get("configurable", {})
-    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
-    api_key = configurable.get("api_key")
-    
-    model = get_chat_model(
-        model=model_name,
-        temperature=0.5,
-        streaming=False,
-        api_key=api_key,
-    )
-    
+
+    # Get model using shared utility
+    model = get_model_from_config(config, temperature=0.5, streaming=False)
+
     # Get current artifact content
     current_content = get_artifact_content(state.artifact)
-    
+
     if not is_artifact_markdown_content(current_content):
         # This node is for text artifacts only
         return {}
-    
+
     artifact_text = current_content.full_markdown
-    
-    # Get reflections
-    store = get_store()
-    assistant_id = configurable.get("assistant_id", "default")
-    memories = store.get(["memories", assistant_id], "reflection")
-    
-    reflections_str = "No reflections found."
-    if memories and memories.value:
-        reflections_str = get_formatted_reflections(Reflections(**memories.value))
+
+    # Get reflections using shared utility
+    reflections_str = get_reflections_from_store(config)
     
     # Determine which modification to apply
     prompt = None

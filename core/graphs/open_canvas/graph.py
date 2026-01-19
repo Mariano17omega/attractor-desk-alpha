@@ -232,7 +232,9 @@ async def generate_title_node(
         logger.debug("Title generation skipped: no tool call returned.")
         return {}
 
-    repo = SessionRepository(Database())
+    # Get database from config or create a new instance (fallback for backwards compatibility)
+    db = configurable.get("database") or Database()
+    repo = SessionRepository(db)
     session = repo.get_by_id(session_id)
     if not session:
         return {}

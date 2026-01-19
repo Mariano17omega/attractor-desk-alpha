@@ -264,6 +264,7 @@ class TestGraphFinished:
         """Test handling successful graph execution with new messages."""
         graph_handler.set_session(mock_session)
         graph_handler._active_run_token = "test_token"
+        graph_handler._active_session_id = mock_session.id  # Set session ID for race condition check
         graph_handler._is_loading = True
 
         # Create result with new AI message
@@ -313,6 +314,7 @@ class TestGraphFinished:
         """Test handling graph result with artifact."""
         graph_handler.set_session(mock_session)
         graph_handler._active_run_token = "test_token"
+        graph_handler._active_session_id = mock_session.id
 
         mock_artifact = Mock()
         mock_artifact.contents = ["content1", "content2"]

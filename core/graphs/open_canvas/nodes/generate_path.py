@@ -15,7 +15,7 @@ from core.graphs.open_canvas.prompts import (
     CURRENT_ARTIFACT_PROMPT,
     NO_ARTIFACT_PROMPT,
 )
-from core.llm import get_chat_model
+from core.graphs.open_canvas.nodes.node_utils import get_model_from_config, get_messages
 from core.utils.artifacts import get_artifact_content, format_artifact_content
 from core.utils.messages import format_messages
 
@@ -26,14 +26,14 @@ async def generate_path(
 ) -> OpenCanvasReturnType:
     """
     Routes to the proper node in the graph based on the user's query.
-    
+
     This matches the TypeScript implementation which:
     1. First checks for explicit state flags (highlighted_code, etc.)
     2. Falls through to LLM-based routing with ONLY 2 options
-    
+
     For artifact operations, sets artifact_action and routes to artifactOps subgraph.
     """
-    messages = state.internal_messages if state.internal_messages else state.messages
+    messages = get_messages(state)
     
     # Check for direct routing based on explicit state flags
     # These route through the ArtifactOps subgraph
@@ -77,24 +77,16 @@ async def _dynamic_determine_path(
 ) -> OpenCanvasReturnType:
     """
     Use LLM to dynamically determine the routing path.
-    
+
     CRITICAL: This matches TypeScript by limiting route options to ONLY 2:
     - replyToGeneralInput: for general questions not requiring artifact changes
     - rewriteArtifact/generateArtifact: for any artifact-related action
     """
     from typing import Literal
     from pydantic import BaseModel, Field
-    
-    # Get model from config or use default
-    configurable = config.get("configurable", {})
-    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
-    api_key = configurable.get("api_key")
-    model = get_chat_model(
-        model=model_name,
-        temperature=0,
-        streaming=False,
-        api_key=api_key,
-    )
+
+    # Get model using shared utility (with temperature=0 for deterministic routing)
+    model = get_model_from_config(config, temperature=0, streaming=False)
     
     # Determine artifact route based on presence (matches TypeScript exactly)
     has_artifact = state.artifact is not None and len(state.artifact.contents) > 0

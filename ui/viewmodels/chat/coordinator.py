@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from core.persistence import (
     ArtifactRepository,
+    Database,
     MessageAttachmentRepository,
     MessageRepository,
     SessionRepository,
@@ -60,6 +61,7 @@ class ChatCoordinator(QObject):
         artifact_repository: ArtifactRepository,
         session_repository: SessionRepository,
         settings_viewmodel: SettingsViewModel,
+        database: Optional[Database] = None,
         rag_service: Optional[RagService] = None,
         local_rag_service: Optional[LocalRagService] = None,
         parent: Optional[QObject] = None,
@@ -72,6 +74,7 @@ class ChatCoordinator(QObject):
             artifact_repository: Repository for artifact persistence
             session_repository: Repository for session persistence
             settings_viewmodel: Settings viewmodel for configuration
+            database: Optional shared database instance for graph config
             rag_service: Optional RAG service for global indexing
             local_rag_service: Optional local RAG service for ChatPDF
             parent: Optional parent QObject
@@ -79,6 +82,7 @@ class ChatCoordinator(QObject):
         super().__init__(parent)
 
         # Store dependencies
+        self._database = database
         self._local_rag_service = local_rag_service
         self._pending_attachments: list[str] = []
 
@@ -131,6 +135,7 @@ class ChatCoordinator(QObject):
             settings_viewmodel=settings_viewmodel,
             artifact_viewmodel=self.artifacts,
             rag_orchestrator=self.rag,
+            database=self._database,
             parent=self,
         )
 

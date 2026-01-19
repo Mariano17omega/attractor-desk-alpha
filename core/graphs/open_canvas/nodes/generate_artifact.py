@@ -13,15 +13,16 @@ from pydantic import BaseModel, Field
 from core.graphs.open_canvas.state import OpenCanvasState, OpenCanvasReturnType
 from core.graphs.open_canvas.prompts import NEW_ARTIFACT_PROMPT
 from core.graphs.open_canvas.nodes.rag_utils import build_rag_prompt
-from core.llm import get_chat_model
-from core.utils.reflections import get_formatted_reflections
-from core.store import get_store
+from core.graphs.open_canvas.nodes.node_utils import (
+    get_model_from_config,
+    get_reflections_from_store,
+    get_messages,
+)
 from core.types import (
     ArtifactV3,
     ArtifactCodeV3,
     ArtifactMarkdownV3,
     ProgrammingLanguageOptions,
-    Reflections,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,34 +53,19 @@ async def generate_artifact(
     """
     Generate a new artifact based on the user's query.
     """
-    # Get model configuration
-    configurable = config.get("configurable", {})
-    model_name = configurable.get("model", "anthropic/claude-3.5-sonnet")
-    api_key = configurable.get("api_key")
-    
-    model = get_chat_model(
-        model=model_name,
-        temperature=0.5,
-        streaming=False,
-        api_key=api_key,
-    )
-    
-    # Get reflections
-    store = get_store()
-    assistant_id = configurable.get("assistant_id", "default")
-    memories = store.get(["memories", assistant_id], "reflection")
-    
-    reflections_str = "No reflections found."
-    if memories and memories.value:
-        reflections_str = get_formatted_reflections(Reflections(**memories.value))
-    
+    # Get model using shared utility
+    model = get_model_from_config(config, temperature=0.5, streaming=False)
+
+    # Get reflections using shared utility
+    reflections_str = get_reflections_from_store(config)
+
     # Build prompt
     formatted_prompt = NEW_ARTIFACT_PROMPT.format(
         reflections=reflections_str,
         disableChainOfThought="",  # Not using chain of thought
     )
     formatted_prompt += build_rag_prompt(state)
-    
+
     # Bind tool
     model_with_tool = model.bind_tools(
         [
@@ -91,9 +77,9 @@ async def generate_artifact(
         ],
         tool_choice="generate_artifact",
     )
-    
-    # Get messages
-    messages = state.internal_messages if state.internal_messages else state.messages
+
+    # Get messages using shared utility
+    messages = get_messages(state)
     
     # Invoke model
     response = await model_with_tool.ainvoke([

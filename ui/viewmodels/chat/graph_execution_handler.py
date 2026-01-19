@@ -12,6 +12,7 @@ from core.config import get_exa_api_key, get_firecrawl_api_key
 from core.models import Message, MessageAttachment, MessageRole, Session
 from core.persistence import (
     ArtifactRepository,
+    Database,
     MessageAttachmentRepository,
     MessageRepository,
     SessionRepository,
@@ -58,6 +59,7 @@ class GraphExecutionHandler(QObject):
         settings_viewmodel: SettingsViewModel,
         artifact_viewmodel: ArtifactViewModel,
         rag_orchestrator: RagOrchestrator,
+        database: Optional[Database] = None,
         parent: Optional[QObject] = None,
     ):
         """Initialize the graph execution handler.
@@ -70,6 +72,7 @@ class GraphExecutionHandler(QObject):
             settings_viewmodel: Settings viewmodel for configuration
             artifact_viewmodel: Artifact viewmodel for artifact state
             rag_orchestrator: RAG orchestrator for indexing
+            database: Optional shared database instance for graph config
             parent: Optional parent QObject
         """
         super().__init__(parent)
@@ -80,6 +83,7 @@ class GraphExecutionHandler(QObject):
         self._settings_viewmodel = settings_viewmodel
         self._artifact_viewmodel = artifact_viewmodel
         self._rag_orchestrator = rag_orchestrator
+        self._database = database
 
         self._messages: list[BaseMessage] = []
         self._internal_messages: list[BaseMessage] = []
@@ -90,6 +94,7 @@ class GraphExecutionHandler(QObject):
 
         self._worker: Optional[GraphWorker] = None
         self._active_run_token: Optional[str] = None
+        self._active_session_id: Optional[str] = None  # Track session for race condition prevention
 
         self._settings: dict = {
             "model": "anthropic/claude-3.5-sonnet",
@@ -218,6 +223,7 @@ class GraphExecutionHandler(QObject):
         # Run in worker thread with a unique run token
         run_token = str(uuid4())
         self._active_run_token = run_token
+        self._active_session_id = self._current_session.id  # Capture session for race condition check
 
         # Clean up any previous worker reference (worker is one-shot)
         # Note: The actual C++ object may already be deleted via deleteLater
@@ -288,6 +294,7 @@ class GraphExecutionHandler(QObject):
                 "api_key": self._settings_viewmodel.api_key or None,
                 "session_id": self._current_session.id,
                 "workspace_id": self._current_session.workspace_id,
+                "database": self._database,  # Pass shared database instance for graph nodes
                 "rag_enabled": self._settings_viewmodel.rag_enabled,
                 "rag_scope": self._settings_viewmodel.rag_scope,
                 "rag_k_lex": self._settings_viewmodel.rag_k_lex,
@@ -317,6 +324,15 @@ class GraphExecutionHandler(QObject):
         """
         # Ignore stale results from cancelled or outdated workers
         if run_token != self._active_run_token:
+            return
+
+        # Verify session hasn't changed during graph execution (race condition prevention)
+        if not self._current_session or self._current_session.id != self._active_session_id:
+            logger.info(
+                "Ignoring graph result from session %s - current session is %s",
+                self._active_session_id,
+                self._current_session.id if self._current_session else "None",
+            )
             return
 
         self._set_loading(False)
@@ -416,5 +432,6 @@ class GraphExecutionHandler(QObject):
         if not self._is_loading:
             return
         self._active_run_token = None  # Invalidate token to ignore stale results
+        self._active_session_id = None  # Clear session ID
         self._set_loading(False)
         self.status_changed.emit("Cancelled")

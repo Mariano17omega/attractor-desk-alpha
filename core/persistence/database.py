@@ -174,11 +174,28 @@ class Database:
         self._ensure_rag_index_registry(conn)
         self._seed_global_workspace(conn)
 
+    # Allowlist for migration column validation (Issue #3: Dynamic SQL safety)
+    _RAG_DOCUMENT_MIGRATION_COLUMNS: frozenset = frozenset({
+        "indexed_at",
+        "file_size",
+        "embedding_status",
+        "embedding_model",
+        "embedding_error",
+        "stale_at",
+    })
+    _RAG_DOCUMENT_MIGRATION_TYPES: frozenset = frozenset({
+        "TEXT",
+        "INTEGER",
+        "TEXT NOT NULL DEFAULT 'disabled'",
+    })
+
     def _ensure_rag_document_columns(self, conn: sqlite3.Connection) -> None:
         cursor = conn.execute("PRAGMA table_info(rag_documents)")
         existing = {row["name"] for row in cursor.fetchall()}
         embedding_status_added = "embedding_status" not in existing
         embedding_model_added = "embedding_model" not in existing
+
+        # Hardcoded migration columns with explicit allowlist validation
         columns = {
             "indexed_at": "TEXT",
             "file_size": "INTEGER",
@@ -187,7 +204,13 @@ class Database:
             "embedding_error": "TEXT",
             "stale_at": "TEXT",
         }
+
         for name, col_type in columns.items():
+            # Validate against allowlist before executing dynamic SQL
+            if name not in self._RAG_DOCUMENT_MIGRATION_COLUMNS:
+                raise ValueError(f"Migration blocked: unknown column '{name}'")
+            if col_type not in self._RAG_DOCUMENT_MIGRATION_TYPES:
+                raise ValueError(f"Migration blocked: unknown type '{col_type}'")
             if name not in existing:
                 conn.execute(f"ALTER TABLE rag_documents ADD COLUMN {name} {col_type}")
         conn.execute(

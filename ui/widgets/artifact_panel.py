@@ -420,37 +420,16 @@ class ArtifactPanel(QWidget):
             export_meta=ArtifactExportMeta(),
         )
 
-        # Get or create collection
-        collection = self.view_model._artifact_repository.get_collection(session_id)
-        if collection is None:
-            collection = ArtifactCollectionV1(
-                version=1,
-                artifacts=[entry],
-                active_artifact_id=entry.id,
-            )
-        else:
-            collection.artifacts.append(entry)
-            collection.active_artifact_id = entry.id
-
-        self.view_model._artifact_repository.save_collection(session_id, collection)
-        self.view_model._artifact = new_artifact
-        self.view_model.artifact_changed.emit()
+        # Use public facade method to create artifact
+        self.view_model.create_artifact(entry)
 
     def _select_artifact(self, artifact_id: str):
         """Select an artifact by ID."""
-        session_id = self.view_model.current_session_id
-        if not session_id:
-            return
-
-        collection = self.view_model._artifact_repository.get_collection(session_id)
-        if collection is None:
-            return
-
-        if collection.set_active_artifact(artifact_id):
-            self.view_model._artifact_repository.save_collection(session_id, collection)
-            self.view_model._artifact = collection.get_active_artifact()
+        if self.view_model.select_artifact(artifact_id):
             self.artifact_selected.emit(artifact_id)
-            self._update_display(collection)
+            collection = self.view_model.get_artifact_collection()
+            if collection:
+                self._update_display(collection)
 
     def _on_prev_version(self):
         """Navigate to previous artifact version."""
@@ -462,12 +441,7 @@ class ArtifactPanel(QWidget):
 
     def _on_artifact_changed(self):
         """Handle artifact changes from view model."""
-        session_id = self.view_model.current_session_id
-        if not session_id:
-            self._show_placeholder()
-            return
-
-        collection = self.view_model._artifact_repository.get_collection(session_id)
+        collection = self.view_model.get_artifact_collection()
         if collection is None or not collection.artifacts:
             self._show_placeholder()
             return
@@ -541,10 +515,8 @@ class ArtifactPanel(QWidget):
         if current_content.type != "pdf":
             return
         current_content.current_page = page_index + 1
-        session_id = self.view_model.current_session_id
-        if session_id:
-            self.view_model._artifact_repository.save_collection(session_id, self._collection)
-        self.view_model._artifact = active_entry.artifact
+        # Use public facade method to update collection
+        self.view_model.update_artifact_collection(self._collection)
 
     def _start_edit_mode(self):
         """Enter edit mode for the current text artifact."""
@@ -589,9 +561,8 @@ class ArtifactPanel(QWidget):
 
         new_content = self.raw_text_editor.toPlainText()
 
-        # Update the artifact in the COLLECTION (not view_model which is a separate reference)
-        session_id = self.view_model.current_session_id
-        if session_id and self._collection:
+        # Update the artifact in the COLLECTION
+        if self._collection:
             # Get the active entry from the collection
             active_entry = self._collection.get_active_entry()
             if active_entry and active_entry.artifact.contents:
@@ -601,13 +572,8 @@ class ArtifactPanel(QWidget):
                         content.full_markdown = new_content
                         break
 
-                # Also sync to view_model so UI stays consistent
-                self.view_model._artifact = artifact
-
-            # Persist to repository
-            self.view_model._artifact_repository.save_collection(
-                session_id, self._collection
-            )
+            # Use public facade method to persist
+            self.view_model.update_artifact_collection(self._collection)
 
         self._exit_edit_mode()
 
@@ -703,8 +669,7 @@ class ArtifactPanel(QWidget):
             new_title = "Untitled"  # Fallback
 
         # Update artifact title
-        session_id = self.view_model.current_session_id
-        if session_id and self._collection:
+        if self._collection:
             active_entry = self._collection.get_active_entry()
             if active_entry and active_entry.artifact.contents:
                 artifact = active_entry.artifact
@@ -712,10 +677,8 @@ class ArtifactPanel(QWidget):
                     if content.index == artifact.current_index:
                         content.title = new_title
                         break
-                # Persist changes
-                self.view_model._artifact_repository.save_collection(
-                    session_id, self._collection
-                )
+                # Use public facade method to persist
+                self.view_model.update_artifact_collection(self._collection)
 
         # Update UI
         self.title_label.setText(new_title)
@@ -750,24 +713,6 @@ class ArtifactPanel(QWidget):
         if reply != QMessageBox.Yes:
             return
 
-        session_id = self.view_model.current_session_id
-        if not session_id:
-            return
-
-        # Remove artifact from collection
+        # Use public facade method to delete artifact
         artifact_id = self._collection.active_artifact_id
-        self._collection.artifacts = [
-            e for e in self._collection.artifacts if e.id != artifact_id
-        ]
-
-        # Select next artifact or clear
-        if self._collection.artifacts:
-            self._collection.active_artifact_id = self._collection.artifacts[0].id
-            self.view_model._artifact = self._collection.get_active_artifact()
-        else:
-            self._collection.active_artifact_id = None
-            self.view_model._artifact = None
-
-        # Persist and refresh
-        self.view_model._artifact_repository.save_collection(session_id, self._collection)
-        self.view_model.artifact_changed.emit()
+        self.view_model.delete_artifact(artifact_id)

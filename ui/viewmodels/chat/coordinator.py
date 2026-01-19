@@ -356,3 +356,60 @@ class ChatCoordinator(QObject):
             workspace_id=self.sessions.current_session.workspace_id,
             session_id=self.sessions.current_session.id,
         )
+
+    # ========== Artifact Collection Methods (Facade for ArtifactViewModel) ==========
+
+    def get_artifact_collection(self):
+        """Get the artifact collection for the current session.
+
+        Returns:
+            The artifact collection or None if no session or not found
+        """
+        if not self.sessions.current_session:
+            return None
+        return self.artifacts.get_collection(self.sessions.current_session.id)
+
+    def create_artifact(self, entry) -> None:
+        """Create a new artifact and add it to the collection.
+
+        Args:
+            entry: The artifact entry to add
+        """
+        if not self.sessions.current_session:
+            return
+        self.artifacts.create_artifact(self.sessions.current_session.id, entry)
+
+    def select_artifact(self, artifact_id: str) -> bool:
+        """Select an artifact by ID.
+
+        Args:
+            artifact_id: The artifact ID to select
+
+        Returns:
+            True if selection was successful, False otherwise
+        """
+        if not self.sessions.current_session:
+            return False
+        return self.artifacts.select_artifact(
+            self.sessions.current_session.id, artifact_id
+        )
+
+    def delete_artifact(self, artifact_id: str) -> None:
+        """Delete an artifact from the collection.
+
+        Args:
+            artifact_id: The artifact ID to delete
+        """
+        if not self.sessions.current_session:
+            return
+        self.artifacts.delete_artifact(self.sessions.current_session.id, artifact_id)
+
+    def update_artifact_collection(self, collection) -> None:
+        """Update the artifact collection (for edits, title changes, etc.).
+
+        Args:
+            collection: The updated collection
+        """
+        if not self.sessions.current_session:
+            return
+        self.artifacts.update_collection(self.sessions.current_session.id, collection)

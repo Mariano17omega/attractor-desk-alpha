@@ -219,22 +219,28 @@ class GraphExecutionHandler(QObject):
         run_token = str(uuid4())
         self._active_run_token = run_token
 
-        # Check if previous worker is still running
-        if self._worker and self._worker.isRunning():
-            logger.warning("Previous worker still running, waiting for completion...")
-            self._worker.wait(timeout=100)  # Wait up to 100ms for graceful shutdown
-            if self._worker.isRunning():
-                logger.warning("Previous worker did not finish, terminating...")
-                self._worker.terminate()
-                self._worker.wait()
+        # Clean up any previous worker reference (worker is one-shot)
+        # Note: The actual C++ object may already be deleted via deleteLater
+        self._worker = None
 
+        # Create new worker (one-shot pattern)
         self._worker = GraphWorker(state, config, run_token)
         self._worker.finished.connect(self._on_graph_finished)
         self._worker.error.connect(self._on_graph_error)
-        # Connect deleteLater to ensure proper cleanup
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._worker.error.connect(self._worker.deleteLater)
+        self._worker.finished.connect(self._cleanup_worker)
+        self._worker.error.connect(self._cleanup_worker)
         self._worker.start()
+
+    def _cleanup_worker(self) -> None:
+        """Clean up the worker after it finishes.
+
+        This ensures we don't hold a reference to a deleted QThread.
+        Called when the worker finishes (success or error).
+        """
+        if self._worker is not None:
+            # Schedule the worker for deletion and clear our reference
+            self._worker.deleteLater()
+            self._worker = None
 
     def _prepare_graph_state(self) -> dict:
         """Prepare the state for graph execution.
@@ -401,7 +407,12 @@ class GraphExecutionHandler(QObject):
 
     @Slot()
     def cancel_generation(self) -> None:
-        """Cancel the current generation (best-effort)."""
+        """Cancel the current generation (best-effort).
+
+        Note: The worker thread will continue running until completion,
+        but results will be ignored due to token invalidation.
+        The worker cleanup will happen when it finishes via _cleanup_worker.
+        """
         if not self._is_loading:
             return
         self._active_run_token = None  # Invalidate token to ignore stale results

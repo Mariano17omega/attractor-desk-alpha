@@ -7,7 +7,7 @@ from typing import Optional
 from PySide6.QtCore import QObject, Signal
 
 from core.persistence import ArtifactRepository
-from core.types import ArtifactCollectionV1, ArtifactV3
+from core.types import ArtifactCollectionV1, ArtifactEntry, ArtifactV3
 
 
 class ArtifactViewModel(QObject):
@@ -152,3 +152,123 @@ class ArtifactViewModel(QObject):
         else:
             self._conversation_mode = "normal"
             self._active_pdf_document_id = None
+
+    # ========== Public Facade Methods for Artifact Collection Operations ==========
+
+    def get_collection(self, session_id: str) -> Optional[ArtifactCollectionV1]:
+        """
+        Get the artifact collection for a session.
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            The artifact collection or None if not found
+        """
+        return self._artifact_repository.get_collection(session_id)
+
+    def save_collection(
+        self, session_id: str, collection: ArtifactCollectionV1
+    ) -> None:
+        """
+        Save an artifact collection.
+
+        Args:
+            session_id: The session ID
+            collection: The collection to save
+        """
+        self._artifact_repository.save_collection(session_id, collection)
+        self._artifact = collection.get_active_artifact()
+        self.artifact_changed.emit()
+
+    def create_artifact(self, session_id: str, entry: ArtifactEntry) -> None:
+        """
+        Create a new artifact and add it to the collection.
+
+        Args:
+            session_id: The session ID
+            entry: The artifact entry to add
+        """
+        collection = self._artifact_repository.get_collection(session_id)
+        if collection is None:
+            collection = ArtifactCollectionV1(
+                version=1,
+                artifacts=[entry],
+                active_artifact_id=entry.id,
+            )
+        else:
+            collection.artifacts.append(entry)
+            collection.active_artifact_id = entry.id
+
+        self._artifact_repository.save_collection(session_id, collection)
+        self._artifact = entry.artifact
+        self.artifact_changed.emit()
+
+    def select_artifact(self, session_id: str, artifact_id: str) -> bool:
+        """
+        Select an artifact by ID.
+
+        Args:
+            session_id: The session ID
+            artifact_id: The artifact ID to select
+
+        Returns:
+            True if selection was successful, False otherwise
+        """
+        collection = self._artifact_repository.get_collection(session_id)
+        if collection is None:
+            return False
+
+        if not collection.set_active_artifact(artifact_id):
+            return False
+
+        self._artifact_repository.save_collection(session_id, collection)
+        self._artifact = collection.get_active_artifact()
+        self._update_conversation_mode_from_collection(collection)
+        return True
+
+    def delete_artifact(self, session_id: str, artifact_id: str) -> None:
+        """
+        Delete an artifact from the collection.
+
+        Args:
+            session_id: The session ID
+            artifact_id: The artifact ID to delete
+        """
+        collection = self._artifact_repository.get_collection(session_id)
+        if collection is None:
+            return
+
+        # Remove artifact from collection
+        collection.artifacts = [
+            e for e in collection.artifacts if e.id != artifact_id
+        ]
+
+        # Select next artifact or clear
+        if collection.artifacts:
+            collection.active_artifact_id = collection.artifacts[0].id
+            self._artifact = collection.get_active_artifact()
+        else:
+            collection.active_artifact_id = None
+            self._artifact = None
+
+        self._artifact_repository.save_collection(session_id, collection)
+        self.artifact_changed.emit()
+
+    def update_collection(
+        self, session_id: str, collection: ArtifactCollectionV1
+    ) -> None:
+        """
+        Update an artifact collection without changing the current artifact selection.
+
+        Use this for content edits, title changes, page changes, etc.
+
+        Args:
+            session_id: The session ID
+            collection: The updated collection
+        """
+        self._artifact_repository.save_collection(session_id, collection)
+        # Sync current artifact from collection
+        active = collection.get_active_artifact()
+        if active:
+            self._artifact = active

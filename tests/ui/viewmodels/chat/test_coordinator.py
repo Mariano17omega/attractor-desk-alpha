@@ -10,12 +10,19 @@ from core.models import Session
 @pytest.fixture
 def mock_repositories():
     """Create mock repositories."""
+    message_mock = Mock()
+    attachment_mock = Mock()
+    artifact_mock = Mock()
+    session_mock = Mock()
+    # Configure artifact mock to return None by default (no existing collection)
+    artifact_mock.get_collection.return_value = None
     return {
-        "message": Mock(),
-        "attachment": Mock(),
-        "artifact": Mock(),
-        "session": Mock(),
+        "message": message_mock,
+        "attachment": attachment_mock,
+        "artifact": artifact_mock,
+        "session": session_mock,
     }
+
 
 
 @pytest.fixture
@@ -147,7 +154,7 @@ class TestLoadSession:
         mock_repositories["session"].get_by_id.assert_called_once_with("session_123")
 
         # Verify artifacts were loaded
-        assert coordinator.artifacts._session_id == "session_123"
+        mock_repositories["artifact"].get_collection.assert_called_with("session_123")
 
 
 class TestClear:

@@ -12,7 +12,8 @@ from ui.viewmodels.settings.appearance_settings import AppearanceSettings
 def temp_db(tmp_path):
     """Create temporary database for testing."""
     db_path = tmp_path / "test_settings.db"
-    return Database(str(db_path))
+    return Database(db_path)
+
 
 
 @pytest.fixture

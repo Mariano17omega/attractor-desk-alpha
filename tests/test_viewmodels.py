@@ -43,7 +43,7 @@ def test_workspace_viewmodel_crud(tmp_path: Path) -> None:
 
 def test_settings_viewmodel_persistence(tmp_path: Path) -> None:
     db = Database(tmp_path / "settings.db")
-    settings_vm = SettingsViewModel(settings_db=db)
+    settings_vm = SettingsViewModel(database=db)
     settings_vm.theme_mode = ThemeMode.LIGHT
     settings_vm.font_family = "Arial"
     settings_vm.transparency = 85
@@ -53,7 +53,8 @@ def test_settings_viewmodel_persistence(tmp_path: Path) -> None:
     settings_vm.add_model("openai/gpt-4o")
     settings_vm.save_settings()
 
-    reloaded = SettingsViewModel(settings_db=db)
+    reloaded = SettingsViewModel(database=db)
+    reloaded.load_settings()
     assert reloaded.theme_mode == ThemeMode.LIGHT
     assert reloaded.font_family == "Arial"
     assert reloaded.transparency == 85
@@ -64,13 +65,14 @@ def test_settings_viewmodel_persistence(tmp_path: Path) -> None:
 
 def test_settings_viewmodel_deep_search_persistence(tmp_path: Path) -> None:
     db = Database(tmp_path / "settings.db")
-    settings_vm = SettingsViewModel(settings_db=db)
+    settings_vm = SettingsViewModel(database=db)
     settings_vm.deep_search_enabled = True
     settings_vm.exa_api_key = "exa-test-key-123"
     settings_vm.deep_search_num_results = 10
     settings_vm.save_settings()
 
-    reloaded = SettingsViewModel(settings_db=db)
+    reloaded = SettingsViewModel(database=db)
+    reloaded.load_settings()
     assert reloaded.deep_search_enabled is True
     assert reloaded.exa_api_key == "exa-test-key-123"
     assert reloaded.deep_search_num_results == 10
@@ -79,7 +81,7 @@ def test_settings_viewmodel_deep_search_persistence(tmp_path: Path) -> None:
 def test_settings_viewmodel_rag_global_persistence(tmp_path: Path) -> None:
     """Integration test for RAG global settings state transitions."""
     db = Database(tmp_path / "settings.db")
-    settings_vm = SettingsViewModel(settings_db=db)
+    settings_vm = SettingsViewModel(database=db)
     settings_vm.rag_enabled = True
     settings_vm.rag_global_folder = "/test/rag/folder"
     settings_vm.rag_global_monitoring_enabled = True
@@ -87,9 +89,11 @@ def test_settings_viewmodel_rag_global_persistence(tmp_path: Path) -> None:
     settings_vm.rag_scope = "global"
     settings_vm.save_settings()
 
-    reloaded = SettingsViewModel(settings_db=db)
+    reloaded = SettingsViewModel(database=db)
+    reloaded.load_settings()
     assert reloaded.rag_enabled is True
     assert reloaded.rag_global_folder == "/test/rag/folder"
     assert reloaded.rag_global_monitoring_enabled is True
     assert reloaded.rag_chatpdf_retention_days == 14
     assert reloaded.rag_scope == "global"
+

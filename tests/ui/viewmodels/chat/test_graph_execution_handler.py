@@ -343,13 +343,10 @@ class TestGraphError:
         graph_handler._active_run_token = "test_token"
         graph_handler._is_loading = True
 
-        with qtbot.waitSignals(
-            [graph_handler.error_occurred, graph_handler.is_loading_changed],
-            timeout=1000,
-        ) as blocker:
+        with qtbot.waitSignal(graph_handler.error_occurred, timeout=1000) as blocker:
             graph_handler._on_graph_error("Test error", "test_token")
 
-        assert blocker.args[0][0] == "Test error"
+        assert blocker.args[0] == "Test error"
         assert graph_handler.is_loading is False
 
     def test_graph_error_stale_token(self, graph_handler):

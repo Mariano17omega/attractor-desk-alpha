@@ -9,7 +9,7 @@ from ui.viewmodels import SettingsViewModel
 
 def test_settings_viewmodel_clamps_values(tmp_path: Path) -> None:
     db = Database(tmp_path / "settings.db")
-    settings_vm = SettingsViewModel(settings_db=db)
+    settings_vm = SettingsViewModel(database=db)
 
     settings_vm.rag_chunk_overlap_chars = 300
     settings_vm.rag_chunk_size_chars = 250
@@ -29,7 +29,7 @@ def test_settings_viewmodel_clamps_values(tmp_path: Path) -> None:
 
 def test_settings_viewmodel_validates_inputs(tmp_path: Path) -> None:
     db = Database(tmp_path / "settings.db")
-    settings_vm = SettingsViewModel(settings_db=db)
+    settings_vm = SettingsViewModel(database=db)
 
     settings_vm.search_provider = "unknown"
     assert settings_vm.search_provider == "exa"
@@ -37,9 +37,11 @@ def test_settings_viewmodel_validates_inputs(tmp_path: Path) -> None:
     settings_vm.theme_mode = "invalid"
     assert settings_vm.theme_mode == ThemeMode.DARK
 
-    initial_models = settings_vm.models
+    initial_models = settings_vm.models_list
     settings_vm.add_model("openai/gpt-4o")
-    assert settings_vm.models == initial_models
+    assert settings_vm.models_list == initial_models
 
     settings_vm.add_model(" new-model ")
-    assert "new-model" in settings_vm.models
+    assert "new-model" in settings_vm.models_list
+
+
